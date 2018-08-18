@@ -1,0 +1,166 @@
+#!/usr/bin/perl
+
+#statement-by-customer Copyright 2001-2010 Jason Burrell.
+#This file is part of L'ane. See COPYING for licensing information.
+
+#this program generates a statement for the given customer on a given month
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+$| = 1; #turn line buffering off
+
+use LanePOS::Dal;
+use LanePOS::SysString;
+print "Customer Statement Generator\n\n";
+
+$dal = Dal->new;
+$sysStr = SysString->new($dal);
+if(!$sysStr->open('report-templates-statement'))
+{
+    print STDERR "$0: couldn't open SysString 'report-templates-statement'\n";
+    exit;
+}
+$templateMaster = $sysStr->{'data'};
+
+if(!$sysStr->open('report-statement-output'))
+{
+    print STDERR "$0: couldn't open SysString 'report-statement-output'\n";
+    exit;
+}
+$outCmd = $sysStr->{'data'};
+
+print "Enter Customer ID: ";
+CUSTOMER: while(<>)
+{
+    #reload the template each time
+    $template = $templateMaster;
+
+#    my $id = <>;
+    my $id = $_;
+    chop $id;
+
+    my $idDb = $dal->qt($id);
+    #$db->trace(STDERR);
+    $dal->do("select tranzDate from sales where customer=$idDb and balance > 0 and suspended is false and voidAt is null order by tranzdate");
+    if($dal->{'tuples'})
+    {
+	#we've found the starting ticket
+	my ($startTick) = $dal->fetchrow;
+	$startTick = $dal->qt($startTick);
+	#get the summary info
+	$dal->do("select customers.id,getcustname(customers.id) as name,customers.billaddr1,customers.billaddr2,customers.billcity,customers.billst,customers.billzip,(select sum(sales.balance) from sales where sales.customer = customers.id and suspended=false and voidAt is null) as current from customers,sales where customers.id=$idDb limit 1");
+	if($dal->{'tuples'})
+	{
+	    ($cust{'id'}, $cust{'name'}, $cust{'billAddr1'}, $cust{'billAddr2'}, $cust{'billCity'}, $cust{'billSt'}, $cust{'billZip'}, $state{'balance'}) = $dal->fetchrow;
+	}
+	else
+	{
+	    print STDERR "ERROR: Couldn't get the account summary info. Does the customer exist?\n";
+	    next CUSTOMER;
+	}
+	#get the balance due information
+	#current
+	$dal->do("select sum(sales.balance) as current from sales,customers,terms where sales.customer=customers.id and customers.terms=terms.id and customer=$idDb and sales.balance > 0 and tranzdate::date + terms.duedays > 'now'::date and suspended='f' and voidAt is null");
+	if($dal->{'tuples'})
+	{
+	    ($state{'current'}) = $dal->fetchrow;
+	}
+	else
+	{
+	    print STDERR "ERROR: Couldn't get the current balance info.\n";
+	    next CUSTOMER;
+	}
+	#past due < 30days
+	$dal->do("select sum(sales.balance) as upto30past from sales,customers,terms where sales.customer=customers.id and customers.terms=terms.id and customer=$idDb and sales.balance > 0 and tranzdate::date + terms.duedays > 'now'::date - 30 and tranzdate::date + terms.duedays <= 'now'::date and suspended='f' and voidAt is null");
+	if($dal->{'tuples'})
+	{
+	    ($state{'pastDue'}) = $dal->fetchrow;
+	}
+	else
+	{
+	    print STDERR "ERROR: Couldn't get the 'past due < 30 days' balance info.\n";
+	    next CUSTOMER;
+	}
+	#past due >= 30days
+	$dal->do("select sum(sales.balance) as morethan30past from sales,customers,terms where sales.customer=customers.id and customers.terms=terms.id and customer=$idDb and sales.balance > 0 and tranzdate::date + terms.duedays <= 'now'::date - 30 and suspended='f' and voidAt is null");
+	if($dal->{'tuples'})
+	{
+	    ($state{'veryPastDue'}) = $dal->fetchrow;
+	}
+	else
+	{
+	    print STDERR "ERROR: Couldn't get the 'past due >= 30 days' balance info.\n";
+	    next CUSTOMER;
+	}
+	#*Report = *STDOUT;
+	open Report, $outCmd;
+
+	#open the tickets
+	$dal->do("select sales.id,case when salesItems.plu='RA-TRANZ' then 'Pmt' else 'Sale' end as type,to_char(tranzdate, 'MM-DD-YYYY') as date,case when sales.tranzdate::date + terms.discdays > 'now'::date then to_char(tranzdate::date + terms.discdays, 'MM-DD-YYYY') else ' ' end as discDate,to_char(tranzdate::date + terms.duedays, 'MM-DD-YYYY') as dueDate,case when sales.tranzdate::date + terms.discdays > 'now'::date then (sales.balance * ((100 - discRate)/100))::numeric(20,2) else 0.00 end as discbalance,case when salesItems.plu='RA-TRANZ' then (select -sum(amt) from salesItems as si where si.id=sales.id) else sales.balance end as balance from sales,salesItems,customers,terms where customer=$idDb and sales.customer=customers.id and customers.terms=terms.id and salesItems.id=sales.id and salesItems.lineno=0 and tranzdate>=$startTick and suspended='f' and voidAt is null order by tranzdate");
+	unless($dal->{'tuples'})
+	{
+	    print STDERR "ERROR: Couldn't get the ticket(s) info.\n";
+	    next CUSTOMER;
+	}
+	#this is the one off info
+	$now = `date +'%m-%d-%Y'`;
+	chop $now;
+	$template =~ s/{now\s*}/sprintf "%-.20s", $now/ge;
+	$template =~ s/{user\s*}/sprintf "%-.20s", $ENV{'USER'}/ge;
+	$template =~ s/{custId\s*}/sprintf "%.20s", $id/ge;
+	$template =~ s/{custName\s*}/sprintf "%.40s", $cust{'name'}/ge;
+	$cust{'billAddr1'} =~ s/\#/No./g;
+	$template =~ s/{custAddr1\s*}/sprintf "%.40s", $cust{'billAddr1'}/ge;
+	$cust{'billAddr2'} =~ s/\#/No./g;
+	$template =~ s/{custAddr2\s*}/sprintf "%.40s", $cust{'billAddr2'}/ge;
+	$template =~ s/{custCity\s*}/sprintf "%.35s", $cust{'billCity'}/ge;
+	$template =~ s/{custSt\s*}/sprintf "%2.2s", $cust{'billSt'}/ge;
+	$template =~ s/{custZip\s*}/sprintf "%.10s", $cust{'billZip'}/ge;
+	$template =~ s/{current\s*}/sprintf "%20.20s", moneyFmt($state{'current'})/ge;
+	$template =~ s/{pastDue\s*}/sprintf "%20.20s", ($state{'pastDue'} > 0 ? moneyFmt($state{'pastDue'}) : ' ')/ge;
+	$template =~ s/{veryPastDue\s*}/sprintf "%20.20s", ($state{'veryPastDue'} > 0 ? moneyFmt($state{'veryPastDue'}) : ' ')/ge;
+	$template =~ s/{balance\s*}/sprintf "%20.20s", moneyFmt($state{'balance'})/ge;
+	foreach my $i (1..$dal->{'tuples'})
+	{
+	    my %tick;
+	    ($tick{'id'}, $tick{'type'}, $tick{'date'}, $tick{'discDate'}, $tick{'dueDate'}, $tick{'discBalance'}, $tick{'balance'}) = $dal->fetchrow;
+	    $template =~ s/{ticket$i\s*}/sprintf "%10.10s", $tick{'id'}/ge;
+	    $template =~ s/{type$i\s*}/sprintf "%-4.4s", $tick{'type'}/ge;
+	    $template =~ s/{date$i\s*}/sprintf "%-10.10s", $tick{'date'}/ge;
+	    $template =~ s/{discDate$i\s*}/(($tick{'type'} eq 'Pmt' or $tick{'discDate'} eq $tick{'dueDate'}) ? ' ' x 10 : sprintf "%-10.10s", $tick{'discDate'})/ge;
+	    $template =~ s/{dueDate$i\s*}/(($tick{'type'} eq 'Pmt') ? ' ' x 10 : sprintf "%-10.10s", $tick{'dueDate'})/ge;
+	    $template =~ s/{discAmount$i\s*}/(($tick{'type'} eq 'Pmt' or $tick{'discBalance'} == 0) ? ' ' x 12 : sprintf "%12.12s", moneyFmt($tick{'discBalance'}))/ge;
+	    $template =~ s/{amount$i\s*}/sprintf "%12.12s", moneyFmt($tick{'balance'})/ge;
+	}
+	#remove the extra lines
+	#$template =~ s/{.*}//g;
+	$template =~ s/{ticket.*}/ /g;
+	$template =~ s/{type.*}/ /g;
+	$template =~ s/{date.*}/ /g;
+	$template =~ s/{discDate.*}/ /g;
+	$template =~ s/{dueDate.*}/ /g;
+	$template =~ s/{discAmount.*}/ /g;
+	$template =~ s/{amount.*}/ /g;
+	print Report $template;
+	close Report;
+    }
+    else
+    {
+	print STDERR "No open tickets were found.\nEither this customer does not exist or he/she/it does not have any open tickets.\n\n";
+	next CUSTOMER;
+    }
+
+    print "Enter Customer ID: ";
+}    
+
+sub moneyFmt
+{
+    my $t = sprintf "\$%.2f", "$_[0]";
+    $t =~ s/\$-/-\$/;
+    return $t;
+}

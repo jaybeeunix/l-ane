@@ -1,0 +1,290 @@
+#!/usr/bin/perl -w
+
+#registerTester, a test front-end to L'ane's Register class
+#Copyright 2005-2010 Jason Burrell.
+#Based on registerCurses Copyright 2001-2005 Jason Burrell, Copyright 2000 Burrell Business Systems
+#See COPYING for licensing information
+
+################################################################
+#$Id: registerTester 1207 2011-04-06 00:44:39Z jason $
+################################################################
+
+=pod
+
+=head1 NAME
+
+register/tester/registerTester - a testing interface to L'E<acirc>ne's Register class.
+
+=head1 SYNOPSIS
+
+registerTester [--dev-printer=/dev/yourdevice] [--drv-printer=Ryotous::MarkupPass] [--dev-printer2=/dev/yourdevice] [--drv-printer2=Ryotous::MarkupPass] [--dev-pole=/dev/yourdevice] [--drv-pole=BurrellBizSys::TextInserterPole] [--dev-drawer=/dev/yourdevice] [--drv-drawer=Ryotous::MarkupPass] [-i inputfilename] [--quiet]
+
+=head1 DESCRIPTION
+
+C<registerTester> is a simple front-end to L'E<acirc>ne's Register class. While the primary
+use of this interface is for automated bug-catching and change verification, it can also be
+used to populate a L'E<acirc>ne system with data from an external source.
+
+The various long options override the printer-like devices from C<SysString:register-initMachine-default>.
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+It is not functional yet.
+
+=back
+
+=head1 SEE ALSO
+
+L<LanePOS::Register>
+
+The L'E<acirc>ne Website L<http://l-ane.net/>
+
+The "Register needs an automated test" task L<http://tasks.l-ane.net/show_bug.cgi?id=97>
+
+=cut
+
+#use strict;
+
+$::VERSION = (q$Revision: 1207 $ =~ /(\d+)/)[0];
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+use IO::File;
+#get the options defined above
+use Getopt::Long;
+my %override = (
+		'printer' => {},
+		'printer2' => {},
+		'pole' => {},
+		'drawer' => {},
+		);
+my $inputfile = '-';
+my $quiet;
+
+GetOptions(
+	   'dev-printer=s' => \$override{'printer'}->{'dev'},
+	   'drv-printer=s' => \$override{'printer'}->{'drv'},
+	   'dev-printer2=s' => \$override{'printer2'}->{'dev'},
+	   'drv-printer2=s' => \$override{'printer2'}->{'drv'},
+	   'dev-pole=s' => \$override{'pole'}->{'dev'},
+	   'drv-pole=s' => \$override{'pole'}->{'drv'},
+	   'dev-drawer=s' => \$override{'drawer'}->{'dev'},
+	   'drv-drawer=s' => \$override{'drawer'}->{'drv'},
+	   'i=s' => \$inputfile,
+	   'quiet' => \$quiet,
+	   ) or warn "$0: error processing command line arguments\n";
+
+if($quiet)
+{
+    open STDOUT, '>', '/dev/null';
+    #open STDERR, '>', '/dev/null';
+}
+
+#basic objects, LanePOS
+use LanePOS::Register;
+
+my $reg = Register->new;
+$0 = "registerTester $::VERSION  (using Register $reg->{'version'})"; # modifies the "ps" info
+&copyright;
+$reg->triggerEvent('Lane/CORE/Initialize/User Interface');
+
+#now fix the registerTester devices
+overrideDevices();
+
+if($inputfile ne '-')
+{
+    open STDIN, '<', $inputfile;
+}
+
+###################################################
+# Subroutines
+###################################################
+sub initEvents
+{
+    #add to the register events
+    my ($reg) = @_;
+
+    #remove the empty events from these things
+    foreach my $e
+	(
+	 'Lane/Register/UserInterface/Print Info',
+	 'Lane/Register/UserInterface/Get Responses',
+	 'Lane/Register/UserInterface/Exit',
+	)
+    {
+	pop @{$reg->{'events'}->{$e}};
+    }
+
+    $reg->registerEvent('Lane/Register/UserInterface/Print Info', \&main::infoPrint);
+    $reg->registerEvent('Lane/Register/UserInterface/Get Responses', \&main::getResponses);
+    $reg->registerEvent('Lane/Register/UserInterface/Exit', \&main::byeBye);
+}
+
+sub copyright
+{
+    # displays the copyright msg, pre-curses
+    $| = 1;
+    print "L'ane v", $reg->{'version'}, "
+Copyright 2003-2010 Jason Burrell.
+Copyright 2000-2002 Burrell Business Systems.
+
+L'ane comes with ABSOLUTELY NO WARRANTY; for details see the file
+COPYING. This is free software, and you are welcome to redistribute
+it under certain conditions; see the file COPYING for details.
+
+http://l-ane.net/
+http://ryotous.com/
+
+Using: $ENV{'LaneDSN'}
+";
+    #sleep 2;
+    return 1;
+}
+
+sub infoPrint
+{
+    # puts info (prompt string) into the info window
+    my ($msg) = @_;
+    return 1 if($msg eq '');
+    print "$msg\n";
+    return 1;
+}
+
+sub getInputLine
+{
+    my ($open) = @_;
+    #$open = 1 if $open =~ /open/i;
+    #&lockInterface if !$open;
+    while(<STDIN>)
+    {
+	#let's try the sig handler here...
+	$reg->allowSignals;
+        
+	chop;
+        #ignore blank lines and lines which start w/#
+        next if $_ eq '' or /^#/;
+	return $_;
+    }
+    #trigger a canceling signal, but only if we're in a sale
+    if($#{$reg->{'sale'}->{'items'}} >= 0)
+    {
+        kill('TERM', $$);
+        $reg->allowSignals;
+    }
+    else
+    {
+        &byeBye;
+    }
+}
+
+sub getResponses
+{
+    #the first thing is a "hidden" flag now
+    my $hidden = 1 if shift =~ /hide/i;
+    my @q = @_;
+    my @r;
+    my $c;
+
+    for(my $i = 0; $i <= $#q; $i++)
+    {
+	infoPrint($q[$i]) if $q[$i] ne '';
+	$r[$i] = getInputLine();
+    }
+    return @r;
+}
+
+sub mainInputLoop
+{
+    my ($entStr, $cmd, $cmdStr, $amt, $qty);
+
+    $entStr = $cmd = $cmdStr = $amt = "";
+    $qty = 1;
+    for(;;)
+    {
+	if($reg->{'globalReset'})
+	{
+	    $entStr = $cmd = $cmdStr = $amt = "";
+	    $reg->{'globalReset'} = 0;	# $reg->{'globalReset'} isn't really global, it's just for maininputloop
+	    $qty = 1;
+	}
+	
+	$entStr = getInputLine('open');
+	infoPrint($reg->{'lc'}->get('Enter a product ID, or press a function key'));
+	next if $entStr eq '';
+	if($entStr =~ s/(-?\d+)\*//)
+	{
+	    $qty = $1;
+	    warn "registerTester: \$qty=$qty\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /registerTester/;
+	}
+	if($entStr =~ s/(-?\d+)@//)
+	{
+	    $amt = $1;
+	    warn "registerTester: \$amt=$amt\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /registerTester/;
+	}
+	warn "registerTester: \$entStr=>$entStr<\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /registerTester/;
+	next if $entStr eq '';
+	if($entStr =~ m{([^/]*)/(\D+)(\d*)})
+	{
+	    $entStr = $1;
+	    $cmdStr = $2;
+	    $cmd = $3;
+	    warn "registerTester: (entStr,cmdStr,cmd)=($entStr, $cmdStr, $cmd)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /registerTester/;
+	    if(exists $reg->{'slashFuncts'}{$cmdStr})
+	    {
+		#hackish for the tests
+		$entStr =~ s/%{([^}]+)}/$main::reg->{$1}/g;
+
+		&{$reg->{'slashFuncts'}{$cmdStr}}($cmd, $entStr);		
+	    }
+	}
+	else
+	{
+	    warn "registerTester: calling reg->itemProcess($qty, $amt, $entStr)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /registerTester/;
+
+	    $reg->itemProcess($qty, $amt, $entStr);
+	}
+	$entStr = $cmdStr = $cmd = $amt = '';
+	$qty = 1;
+    }
+}
+
+sub byeBye
+{
+    exit 0;
+}
+
+sub overrideDevices
+{
+    foreach my $o (keys %override)
+    {
+	if(exists $override{$o}->{'dev'} and defined $override{$o}->{'dev'})
+	{
+	    $override{$o}->{'drv'} = 'Ryotous::MarkupPass' if !exists $override{$o}->{'drv'} or !defined $override{$o}->{'drv'}; #we can't recover the SysString:register-initMachine-default value, so we'll pick a reasonable default
+	    my $drv = 'LanePOS::Devices::' . $override{$o}->{'drv'};
+	    eval "require $drv;" or die "couldn't load the override driver (eval says: $@)";
+
+	    $reg->{'dev'}->{$o} = eval $drv . '->new(IO::File->new(\'' . $override{$o}->{'dev'} . '\', \'w\'), $main::reg->{"dal"});' or die "couldn't load the override driver (eval says: $@)";
+	}
+    }
+}
+
+#this is the big'un
+initEvents($reg);
+$reg->newTranz('first');
+
+&mainInputLoop;
+&byeBye;
+1;

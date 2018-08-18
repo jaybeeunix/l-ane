@@ -1,0 +1,747 @@
+#!/usr/bin/perl -w
+
+#LaneBMS/programs/machines
+#Copyright 2003-2010 Jason Burrell
+#Copyright 2000-2002 Burrell Business Systems
+
+#this is the machines program
+#$Id: machines 1193 2010-10-22 21:10:11Z jason $
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+#lbms
+use LanePOS::Machine;
+use LanePOS::Customer;		# for owner stuff
+use LanePOS::Locale;
+
+#globals
+$mach = new Machine;
+$cust = new Customer;
+$lc = new Locale;
+$isNew = 0;
+$isSaved = 0;
+$ownerName = '';
+&resetFlds;
+
+# Sample SpecTcl main program for testing GUI
+use Tk;
+require Tk::Menu;
+$top = MainWindow->new();
+$top->title('L\'ane: ' . $lc->get('Lane/BackOffice/Machines'));
+
+#subs used in multiple places
+sub newRec {
+    $isNew = 1;
+    $entMake->focus;
+    &resetFlds;
+}
+
+sub resetFlds {
+    #reset the machine info
+    $mach->{'make'} = $mach->{'model'} = $mach->{'sn'} = $mach->{'accessories'} = $mach->{'owner'} = $mach->{'location'} = $mach->{'purchased'} = $mach->{'lastService'} = $mach->{'notes'} = $mach->{'contractBegins'} = $mach->{'contractEnds'} = $mach->{'creationDate'} = '';
+    $mach->{'counter'} = 0;
+    $mach->{'onContract'} = 0;
+#    $mach = Machine->new;
+    $ownerName = '';
+    #reset the cust stuff too
+    $cust->{'id'} = $cust->{'coName'} = $cust->{'cntFirst'} = $cust->{'cntLast'} = $cust->{'billAddr1'} = $cust->{'billAddr2'} = $cust->{'billCity'} = $cust->{'billSt'} = $cust->{'billZip'} =  $cust->{'billPhone'} = $cust->{'billFax'} = $cust->{'shipAddr1'} = $cust->{'shipAddr2'} = $cust->{'shipCity'} = $cust->{'shipSt'} = $cust->{'shipZip'} = $cust->{'shipPhone'} = $cust->{'shipFax'} = $cust->{'email'} = $cust->{'creditLmt'} = $cust->{'balance'} = $cust->{'creditRmn'} = $cust->{'lastSale'} = $cust->{'lastPay'} = $cust->{'terms'} = $cust->{'taxRates'} = $cust->{'notes'} = $cust->{'creator'} = $cust->{'creationDate'} = $cust->{'billCountry'} = $cust->{'shipCountry'} = '';
+#    $cust = Customer->new;
+}
+
+sub openShow {
+    return 0 if $isNew;
+    if($mach->open($mach->{'make'}, $mach->{'model'}, $mach->{'sn'}))
+    {
+	#PROBLEM: this can't set the enable/disable status on the contract flds
+	# I un-myed the flds affected
+	if($mach->{'onContract'} == 1)
+	{
+	    $entContractBegins->configure(-state => 'normal');
+	    $entContractEnds->configure(-state => 'normal');
+	} else {
+	    $entContractBegins->configure(-state => 'disabled');
+	    $entContractEnds->configure(-state => 'disabled');
+	}
+	$cust->open($mach->{'owner'}); 
+	$ownerName = $cust->{'coName'} . " (" . $cust->{'cntFirst'} . " " . $cust->{'cntLast'} . ")";
+	$isNew = 0;
+    }
+}
+
+sub checkAndOpen {
+    return 0;
+    #doesn't work--causing problems
+
+    if($mach->{'make'} and $mach->{'model'} and $mach->{'sn'}) # they are defined
+    {
+	&openShow;
+    }
+}
+
+sub custSearchBox {
+    my $searchCust = '';
+    my $searchWin = $top->DialogBox(
+				    -title => $lc->get('Lane/BackOffice/Buttons/Search'),
+				    -buttons => [
+						 $lc->get('Lane/BackOffice/Buttons/Search'),
+						 $lc->get('Lane/BackOffice/Buttons/Cancel'),
+						 ]
+				    );
+    $searchWin->add(Label, -text => $lc->get('Lane/Customer/Search Prompt'))->pack();
+    $searchWin->add(Entry, -textvariable => \$searchCust,
+		    -width => '30')->pack();
+    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/Search'))
+    {
+	my @findings = $cust->searchByName($searchCust);
+	if((ref $findings[0]) eq 'HASH') # it found something
+	{	# if it didn't find anything ref would be ARRAY
+	    #show the search results box
+	    my $foundWin = $top->DialogBox(
+					 -title => $lc->get('Lane/BackOffice/Search Results'),
+					 -buttons => [
+						      $lc->get('Lane/BackOffice/Buttons/OK'),
+						      $lc->get('Lane/BackOffice/Buttons/Cancel')
+						      ]
+					   );
+	    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack();
+	    $fndScroll = $foundWin->add(Scrollbar);
+	    $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+	    $fndScroll->configure(-command => ['yview' => $fndList]);
+	    $fndScroll->pack(-side => 'right', -fill => 'y');
+	    $fndList->pack(-side => 'left', -fill => 'both');
+	    for(my $i = 0; $i <= $#findings; ++$i)
+	    {	# populate the list of findings
+		$fndList->insert('end', $findings[$i]->{'coName'} . " (" . $findings[$i]->{'cntFirst'} . " " . $findings[$i]->{'cntLast'} . ")");
+	    }
+	    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+	    {	# the user picked something (maybe)
+		my @selected = $fndList->curselection;
+		$mach->{'owner'} = $findings[$selected[0]]->{'id'};
+		$ownerName = $fndList->get($selected[0]);
+	    }
+	    $foundWin->destroy;
+	}
+    } 
+    $searchWin->destroy;
+}
+
+sub machSearchBox {
+    my $searchMake = '';
+    my $searchModel = '';
+    my $searchSn = '';
+    my $searchWin = $top->DialogBox(
+				    -title => $lc->get('Lane/BackOffice/Buttons/Search'),
+				    -buttons => [
+						 $lc->get('Lane/BackOffice/Buttons/Search'),
+						 $lc->get('Lane/BackOffice/Buttons/Cancel')
+						 ]
+				    );
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Search Prompt'))->grid(-row => 0, -column => 0, -columnspan => 2);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Make'))->grid(-row => 1, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry, -textvariable => \$searchMake, -width => '30')->grid(-row => 1, -column => 1);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Make'))->grid(-row => 2, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry,-textvariable => \$searchModel, -width => '30')->grid(-row => 2, -column => 1);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Make'))->grid(-row => 3, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry, -textvariable => \$searchSn, -width => '30')->grid(-row => 3, -column => 1);
+
+    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/Search'))
+    {
+	if((my @findings = $mach->findLike($searchMake, $searchModel, $searchSn)))
+	{			# found something, show the box
+	    my $foundWin = $top->DialogBox(
+					   -title => $lc->get('Lane/BackOffice/Search Results'),
+					   -buttons => [
+							$lc->get('Lane/BackOffice/Buttons/OK'),
+							$lc->get('Lane/BackOffice/Buttons/Cancel')
+							]);
+	    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack;
+	    $fndScroll = $foundWin->add(Scrollbar);
+	    $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+	    $fndScroll->configure(-command => ['yview' => $fndList]);
+	    $fndScroll->pack(-side => 'right', -fill => 'both');
+	    $fndList->pack(-side => 'left', -expand => '1', -fill => 'both');
+	    for(my $i = 0; $i <= $#findings; ++$i)
+	    {	# populate the list of findings
+		$fndList->insert('end', $findings[$i]->{'make'} . " " . $findings[$i]->{'model'} . " " . $findings[$i]->{'sn'});
+	    }
+	    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+	    {	# the user picked something (maybe)
+		my @selected = $fndList->curselection;
+		my ($key, $val);
+		$mach->{'make'} = $findings[$selected[0]]->{'make'};
+		$mach->{'model'} = $findings[$selected[0]]->{'model'};
+		$mach->{'sn'} = $findings[$selected[0]]->{'sn'};
+		$isNew = 0;
+		&openShow;
+	    }
+	    $foundWin->destroy;
+	}
+    }
+    $searchWin->destroy;
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from machines.ui
+# For use with Tk402.002, using the grid geometry manager
+sub machines_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($frame_2) = $root->Frame (
+		-relief => 'groove',
+		-borderwidth => '2'
+	);
+	my($frame_3) = $root->Frame (
+	);
+	my($frame_1) = $root->Frame (
+		-relief => 'groove',
+		-borderwidth => '2'
+	);
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Machine/Make'),
+	);
+	#so i can give it focus elsewhere
+	$entMake = $root->Entry (
+		-textvariable => \$mach->{'make'},
+		-width => '25',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Machine/Model'),
+	);
+	my($entModel) = $root->Entry (
+		-textvariable => \$mach->{'model'},
+		-width => '25',
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Machine/Serial Number'),
+	);
+	my($entSn) = $root->Entry (
+		-textvariable => \$mach->{'sn'},
+		-width => '25',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Machine/Counter'),
+	);
+	my($entCounter) = $root->Entry (
+		-textvariable => \$mach->{'counter'},
+		-width => '10',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Machine/Accessories'),
+	);
+	my($entAccessories) = $root->Entry (
+		-textvariable => \$mach->{'accessories'},
+		-width => '35',
+	);
+	my($entOwner) = $root->Entry (
+		-textvariable => \$mach->{'owner'},
+		-width => '15',
+	);
+	my($bSearchByName) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Search'),
+	);
+	my($entOwnerName) = $root->Entry (
+		-textvariable => \$ownerName,
+		-state => 'disabled',
+		-width => '40',
+	);
+	my($label_6) = $root->Label (
+		-text => $lc->get('Lane/Machine/Owner'),
+	);
+	my($label_9) = $root->Label (
+		-text => 'Location:',
+	);
+	my($entLocation) = $root->Entry (
+		-textvariable => \$mach->{'location'},
+		-width => '30',
+	);
+	my($label_7) = $root->Label (
+		-text => $lc->get('Lane/GenericObject/ID'),
+	);
+	my($label_10) = $root->Label (
+		-text => $lc->get('Lane/Machine/Purchase Date'),
+	);
+	my($entPurchased) = $root->Entry (
+		-textvariable => \$mach->{'purchased'},
+		-width => '11',
+	);
+	my($label_8) = $root->Label (
+		-text => '', #this should be obvious
+	);
+	my($label_11) = $root->Label (
+		-text => $lc->get('Lane/Machine/Last Service Date'),
+	);
+	my($entLastService) = $root->Entry (
+		-textvariable => \$mach->{'lastService'},
+		-width => '11',
+	);
+	my($label_12) = $root->Label (
+		-text => $lc->get('Lane/BackOffice/Notes'),
+	);
+	my($entNotes) = $root->Entry (
+		-textvariable => \$mach->{'notes'},
+		-width => '40',
+	);
+	my($label_13) = $root->Label (
+		-text => $lc->get('Lane/Machine/Contract'),
+	);
+	my($chkOnContract) = $root->Checkbutton (
+		-offvalue => 0,
+		-onvalue => 1,
+		-text => $lc->get('Lane/Machine/Contract/On Contract'),
+		-variable => \$mach->{'onContract'},
+	);
+	my($label_14) = $root->Label (
+		-text => $lc->get('Lane/Machine/Contract/Begins'),
+	);
+	my($label_15) = $root->Label (
+		-text => $lc->get('Lane/Machine/Contract/Ends'),
+	);
+
+	#this was un-myed so external subs can set the normal/disabled status
+	$entContractBegins = $root->Entry (
+		-state => 'disabled',
+		-textvariable => \$mach->{'contractBegins'},
+		-width => '11',
+	);
+	$entContractEnds = $root->Entry (
+		-state => 'disabled',
+		-textvariable => \$mach->{'contractEnds'},
+		-width => '11',
+	);
+	#end notes
+	my($bProcess) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Process'),
+	);
+	my($bSearchMach) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Search'),
+	);
+	my($bNew) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/New'),
+	);
+	my($bRemove) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Remove'),
+	);
+	my($bQuit) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Quit'),
+	);
+
+	# widget commands
+	$chkOnContract->configure(-command => sub {
+		    if($mach->{'onContract'} == 0)
+		    {
+			$entContractBegins->configure(-state => 'disabled');
+			$entContractEnds->configure(-state => 'disabled');
+			$mach->{'contractEnds'} = $mach->{'contractBegins'} = '00-00-0000';
+		    } else {
+			$entContractBegins->configure(-state => 'normal');
+			$entContractEnds->configure(-state => 'normal');
+		    }
+		},
+    );
+	$bSearchByName->configure( # working on...
+	        -command => \&custSearchBox
+	);
+	$bProcess->configure(	# done
+		-command => sub {
+		    $mach->save;
+		    &newRec;
+		}
+	);
+	$bSearchMach->configure( # needs work
+		-command => \&machSearchBox
+	);
+	$bNew->configure(	# done
+		-command => sub {
+		    &newRec;
+		}
+	);
+	$bRemove->configure(
+		-command => sub {
+		    require Tk::DialogBox;
+		    my $yes = $lc->get('Lane/BackOffice/Buttons/Yes, Remove');
+		    my $popupWin = $top->DialogBox(
+						   -title => $lc->get('Lane/BackOffice/Confirmation'),
+						   -buttons => [$lc->get('Lane/BackOffice/Buttons/No, Cancel'), $yes]
+						   );
+		    $popupWin->add(Label, -text => $lc->get('Lane/BackOffice/Remove Prompt'))->pack();
+		    $popupWin->add(Label, -text => "[$mach->{'make'} $mach->{'model'} $mach->{'sn'}]")->pack();
+		    
+		    if($popupWin->Show eq $yes)
+		    {
+			$popupWin->destroy;
+			$mach->remove;
+			$isSaved = 1; # to trick newRec
+			&newRec;
+		    }
+		    else
+		    {
+			$popupWin->destroy;
+		    }
+		    
+		}
+	);
+	$bQuit->configure(	# done
+		-command => sub {exit;}
+	);
+
+	# Geometry management
+
+	$frame_2->grid(
+		-in => $root,
+		-column => '2',
+		-row => '11',
+		-sticky => 'w'
+	);
+	$frame_3->grid(
+		-in => $root,
+		-column => '1',
+		-row => '12',
+		-columnspan => '2',
+		-sticky => 'e'
+	);
+	$frame_1->grid(
+		-in => $root,
+		-column => '2',
+		-row => '6',
+		-sticky => 'w'
+	);
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '1',
+		-row => '5',
+		-sticky => 'e'
+	);
+	$label_6->grid(
+		-in => $root,
+		-column => '1',
+		-row => '6',
+		-sticky => 'ne'
+	);
+	$label_9->grid(
+		-in => $root,
+		-column => '1',
+		-row => '7',
+		-sticky => 'e'
+	);
+	$label_7->grid(
+		-in => $frame_1,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$label_10->grid(
+		-in => $root,
+		-column => '1',
+		-row => '8',
+		-sticky => 'e'
+	);
+	$entMake->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$entModel->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$entSn->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$entCounter->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$entAccessories->grid(
+		-in => $root,
+		-column => '2',
+		-row => '5',
+		-sticky => 'w'
+	);
+	$entOwner->grid(
+		-in => $frame_1,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$bSearchByName->grid(
+		-in => $frame_1,
+		-column => '3',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entOwnerName->grid(
+		-in => $frame_1,
+		-column => '2',
+		-row => '2',
+		-columnspan => '2',
+		-sticky => 'w'
+	);
+	$entLocation->grid(
+		-in => $root,
+		-column => '2',
+		-row => '7',
+		-sticky => 'w'
+	);
+	$entPurchased->grid(
+		-in => $root,
+		-column => '2',
+		-row => '8',
+		-sticky => 'w'
+	);
+	$entLastService->grid(
+		-in => $root,
+		-column => '2',
+		-row => '9',
+		-sticky => 'w'
+	);
+	$chkOnContract->grid(
+		-in => $frame_2,
+		-column => '1',
+		-row => '1',
+		-columnspan => '2'
+	);
+	$entContractBegins->grid(
+		-in => $frame_2,
+		-column => '2',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$entContractEnds->grid(
+		-in => $frame_2,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$entNotes->grid(
+		-in => $root,
+		-column => '2',
+		-row => '10',
+		-sticky => 'w'
+	);
+	$label_8->grid(
+		-in => $frame_1,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$label_11->grid(
+		-in => $root,
+		-column => '1',
+		-row => '9',
+		-sticky => 'e'
+	);
+	$label_12->grid(
+		-in => $root,
+		-column => '1',
+		-row => '10',
+		-sticky => 'e'
+	);
+	$label_13->grid(
+		-in => $root,
+		-column => '1',
+		-row => '11',
+		-sticky => 'ne'
+	);
+	$label_14->grid(
+		-in => $frame_2,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$label_15->grid(
+		-in => $frame_2,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$bProcess->grid(
+		-in => $frame_3,
+		-column => '1',
+		-row => '1'
+	);
+	$bSearchMach->grid(
+		-in => $frame_3,
+		-column => '2',
+		-row => '1'
+	);
+	$bNew->grid(
+		-in => $frame_3,
+		-column => '3',
+		-row => '1'
+	);
+	$bRemove->grid(
+		-in => $frame_3,
+		-column => '4',
+		-row => '1'
+	);
+	$bQuit->grid(
+		-in => $frame_3,
+		-column => '5',
+		-row => '1'
+	);
+
+	# Resize behavior management
+
+	# container $frame_2 (rows)
+	$frame_2->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$frame_2->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$frame_2->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+
+	# container $frame_2 (columns)
+	$frame_2->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_2->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# container $frame_3 (rows)
+	$frame_3->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $frame_3 (columns)
+	$frame_3->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_3->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$frame_3->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$frame_3->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$frame_3->gridColumnconfigure(5, -weight => 0, -minsize => 30);
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(5, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(6, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(7, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(8, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(9, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(10, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(11, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(12, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# container $frame_1 (rows)
+	$frame_1->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$frame_1->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+
+	# container $frame_1 (columns)
+	$frame_1->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_1->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$frame_1->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+
+# additional interface code
+  #events
+	$entMake->bind('<FocusOut>', sub {
+	    $mach->{'make'} = sprintf "%.35s", $mach->{'make'};
+	    &checkAndOpen;
+	});
+	$entMake->bind('<Return>', sub {$entMake->focusNext()->focus();});
+	$entModel->bind('<FocusOut>', sub {
+	    $mach->{'model'} = sprintf "%.35s", $mach->{'model'};
+	    &checkAndOpen;
+	});
+	$entModel->bind('<Return>', sub {$entModel->focusNext()->focus();});
+	$entSn->bind('<FocusOut>', sub { 
+	    $mach->{'sn'} = sprintf "%.35s", $mach->{'sn'};
+	    #open up the record
+	    &checkAndOpen;
+	});
+	$entSn->bind('<Return>', sub {$entSn->focusNext()->focus();});
+	$entCounter->bind('<FocusOut>', sub { $mach->{'counter'} = sprintf "%.0f", $mach->{'counter'};});
+	$entCounter->bind('<Return>', sub {$entCounter->focusNext()->focus();});
+	$entAccessories->bind('<FocusOut>', sub { $mach->{'accessories'} = sprintf "%.35s", $mach->{'accessories'};});
+	$entAccessories->bind('<Return>', sub {$entAccessories->focusNext()->focus();});
+
+	#this handles the owner field
+	$entOwner->bind('<FocusOut>', sub {
+	    $mach->{'owner'} = sprintf "%.15s", $mach->{'owner'};
+	    #open the cust record for the name
+	    $cust->open($mach->{'owner'});
+	    $ownerName = $cust->{'coName'} . " (" . $cust->{'cntFirst'} . " " . $cust->{'cntLast'} . ")";
+	});
+	$entOwner->bind('<Return>', sub {$entOwner->focusNext()->focus();});
+
+	$entLocation->bind('<FocusOut>', sub { $mach->{'location'} = sprintf "%.35s", $mach->{'location'};});
+	$entLocation->bind('<Return>', sub {$entLocation->focusNext()->focus();});
+	$entNotes->bind('<FocusOut>', sub { $mach->{'notes'} = sprintf "%.50s", $mach->{'notes'};});
+	$entNotes->bind('<Return>', sub {$entNotes->focusNext()->focus();});
+
+	#date binds
+	$entPurchased->bind('<FocusOut>', sub { 
+	    unless($mach->{'purchased'} =~ m/\d{2}-\d{2}-\d{4}/)
+	    {
+		$entPurchased->bell;
+		$mach->{'purchased'} = '00-00-0000';
+	    }
+
+	});
+	$entPurchased->bind('<Return>', sub {$entPurchased->focusNext()->focus();});
+	$entLastService->bind('<FocusOut>', sub {
+	    unless($mach->{'lastService'} =~ m/\d{2}-\d{2}-\d{4}/)
+	    {
+		$entLastService->bell;
+		$mach->{'lastService'} = '00-00-0000';
+	    }
+	});
+	$entLastService->bind('<Return>', sub {$entLastService->focusNext()->focus();});
+	$entContractBegins->bind('<FocusOut>', sub {
+	    unless($mach->{'contractBegins'} =~ m/\d{2}-\d{2}-\d{4}/)
+	    {
+		$entContractBegins->bell;
+		$mach->{'contractBegins'} = '00-00-0000';
+	    }
+	});
+	$entContractBegins->bind('<Return>', sub {$entContractBegins->focusNext()->focus();});
+	$entContractEnds->bind('<FocusOut>', sub {
+	    unless($mach->{'contractEnds'} =~ m/\d{2}-\d{2}-\d{4}/)
+	    {
+		$entContractEnds->bell;
+		$mach->{'contractEnds'} = '00-00-0000';
+	    }
+	});
+	$entContractEnds->bind('<Return>', sub {$entContractEnds->focusNext()->focus();});
+  #end of events
+# end additional interface code
+}
+machines_ui $top;
+&newRec;
+Tk::MainLoop;
+1;

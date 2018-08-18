@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+
+<head>
+<title>L&#x2019;&#xe2;ne XML Reporter Test: foreach and if Mixed Tests</title>
+</head>
+
+<body>
+<h1>foreach and if mixed tests</h1>
+
+<h2>One of Each</h2>
+<h3>if inside of a foreach</h3>
+This should be true on iteration three.
+<rpt:foreach set='SetConstants.1 5' element='i'><p>This is iteration <rpt:output value='i.value'/>. <rpt:if subject='i.value' verb='==' object='Constant.3'>true at 3</rpt:if></p>
+</rpt:foreach>
+
+<h3>foreach inside of an if</h3>
+<h4>False</h4>
+<rpt:if subject='Constant.1' verb='==' object='Constant.3'>
+<rpt:foreach set='SetConstants.1 5' element='i'><p>This is iteration <rpt:output value='i.value'/>.</p>
+</rpt:foreach>
+</rpt:if>
+
+<h4>True</h4><rpt:if subject='Constant.1' verb='==' object='Constant.1'>
+<rpt:foreach set='SetConstants.1 5' element='j'><p>This is iteration <rpt:output value='j.value'/>.</p>
+</rpt:foreach>
+</rpt:if>
+
+<h2>if inside of multiple foreaches</h2>
+<rpt:foreach set='SetConstants.1 4' element='i'>
+<rpt:foreach set='SetConstants.2 7' element='j'>
+<p>This is iteration <rpt:output value='i.value'/>, <rpt:output value='j.value'/>. <rpt:if subject='i.value' verb='==' object='Constant.3'>i is 3</rpt:if> <rpt:if subject='j.value' verb='==' object='Constant.4'>j is 4</rpt:if></p></rpt:foreach></rpt:foreach>
+
+<h2>foreach inside of an if inside of a foreach</h2>
+<rpt:foreach set='SetConstants.1 9' element='i'><rpt:if subject='i.value' verb='match' object='Constant.^(1|2|4|6|8)$'><rpt:foreach set='SetConstants.2 7' element='j'><p>This is iteration <rpt:output value='i.value'/>, <rpt:output value='j.value'/>.</p>
+</rpt:foreach></rpt:if>
+</rpt:foreach>
+
+</body>
+</html>

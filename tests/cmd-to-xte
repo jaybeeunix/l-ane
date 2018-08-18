@@ -1,0 +1,43 @@
+#!/usr/bin/perl -w
+
+#cmd-to-xte
+
+#convert registerTester-style *.cmd files to a format useable by xte
+
+if(exists $ENV{'LaneTestDisplay'} and $ENV{'LaneTestDisplay'})
+{
+    die "It isn't safe to use your own DISPLAY for these tests!\n" if ($ENV{'DISPLAY'} =~ /(:\d+)/)[0] eq ($ENV{'LaneTestDisplay'} =~ /(:\d+)/)[0];
+    $ENV{'DISPLAY'} = $ENV{'LaneTestDisplay'};
+    $ENV{'LaneTestSpeed'} ||= 0.5;
+}
+
+sub run
+{
+    if(exists $ENV{'LaneTestSpeed'})
+    {
+        system('xte', @_);
+        select(undef, undef, undef, $ENV{'LaneTestSpeed'});
+    }
+    else
+    {
+        print "$_\n" foreach @_;
+    }
+}
+
+while(<>)
+{
+    chop;
+    #ignore blank lines and lines which start w/#
+    next if $_ eq '' or /^#/;
+
+    #convert special keys
+    while(/<([^>]+)>/)
+    {
+        run "key $1";
+        s/<[^>]+>//;
+    }
+    #convert the rest to a string
+    run "str $_";
+
+    run "key Return";
+}

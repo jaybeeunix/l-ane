@@ -1,0 +1,109 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+
+<head>
+<title>L’âne XML Reporter Test: foreach and if Mixed Tests</title>
+</head>
+
+<body>
+<h1>foreach and if mixed tests</h1>
+
+<h2>One of Each</h2>
+<h3>if inside of a foreach</h3>
+This should be true on iteration three.
+<p>This is iteration 1. </p>
+<p>This is iteration 2. </p>
+<p>This is iteration 3. true at 3</p>
+<p>This is iteration 4. </p>
+<p>This is iteration 5. </p>
+
+
+<h3>foreach inside of an if</h3>
+<h4>False</h4>
+
+
+<h4>True</h4>
+<p>This is iteration 1.</p>
+<p>This is iteration 2.</p>
+<p>This is iteration 3.</p>
+<p>This is iteration 4.</p>
+<p>This is iteration 5.</p>
+
+
+
+<h2>if inside of multiple foreaches</h2>
+
+
+<p>This is iteration 1, 2.  </p>
+<p>This is iteration 1, 3.  </p>
+<p>This is iteration 1, 4.  j is 4</p>
+<p>This is iteration 1, 5.  </p>
+<p>This is iteration 1, 6.  </p>
+<p>This is iteration 1, 7.  </p>
+
+<p>This is iteration 2, 2.  </p>
+<p>This is iteration 2, 3.  </p>
+<p>This is iteration 2, 4.  j is 4</p>
+<p>This is iteration 2, 5.  </p>
+<p>This is iteration 2, 6.  </p>
+<p>This is iteration 2, 7.  </p>
+
+<p>This is iteration 3, 2. i is 3 </p>
+<p>This is iteration 3, 3. i is 3 </p>
+<p>This is iteration 3, 4. i is 3 j is 4</p>
+<p>This is iteration 3, 5. i is 3 </p>
+<p>This is iteration 3, 6. i is 3 </p>
+<p>This is iteration 3, 7. i is 3 </p>
+
+<p>This is iteration 4, 2.  </p>
+<p>This is iteration 4, 3.  </p>
+<p>This is iteration 4, 4.  j is 4</p>
+<p>This is iteration 4, 5.  </p>
+<p>This is iteration 4, 6.  </p>
+<p>This is iteration 4, 7.  </p>
+
+<h2>foreach inside of an if inside of a foreach</h2>
+<p>This is iteration 1, 2.</p>
+<p>This is iteration 1, 3.</p>
+<p>This is iteration 1, 4.</p>
+<p>This is iteration 1, 5.</p>
+<p>This is iteration 1, 6.</p>
+<p>This is iteration 1, 7.</p>
+
+<p>This is iteration 2, 2.</p>
+<p>This is iteration 2, 3.</p>
+<p>This is iteration 2, 4.</p>
+<p>This is iteration 2, 5.</p>
+<p>This is iteration 2, 6.</p>
+<p>This is iteration 2, 7.</p>
+
+
+<p>This is iteration 4, 2.</p>
+<p>This is iteration 4, 3.</p>
+<p>This is iteration 4, 4.</p>
+<p>This is iteration 4, 5.</p>
+<p>This is iteration 4, 6.</p>
+<p>This is iteration 4, 7.</p>
+
+
+<p>This is iteration 6, 2.</p>
+<p>This is iteration 6, 3.</p>
+<p>This is iteration 6, 4.</p>
+<p>This is iteration 6, 5.</p>
+<p>This is iteration 6, 6.</p>
+<p>This is iteration 6, 7.</p>
+
+
+<p>This is iteration 8, 2.</p>
+<p>This is iteration 8, 3.</p>
+<p>This is iteration 8, 4.</p>
+<p>This is iteration 8, 5.</p>
+<p>This is iteration 8, 6.</p>
+<p>This is iteration 8, 7.</p>
+
+
+
+
+</body>
+</html>

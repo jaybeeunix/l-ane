@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+
+<head>
+<title>L’âne XML Reporter Test: call Tests</title>
+</head>
+
+<body>
+<h1>call Tests</h1>
+
+<h2>Opening the 'Cash' customer</h2>
+<p>Calling Customer-&gt;open('') (this shouldn't return anything) </p>
+
+<h2>Object.member Syntax</h2>
+<p>ID: </p>
+<p>Company's Name: Cash</p>
+<p>Contact's First Name: </p>
+<p>Contact's Last Name: </p>
+<p>Shipping Address1: </p>
+<p>Address2: </p>
+<p>City: </p>
+<p>State: </p>
+<p>Zip: </p>
+<p>Country: us</p>
+<p>Phone: </p>
+<p>Fax: </p>
+<p>Shipping Address1: </p>
+<p>Address2: </p>
+<p>City: </p>
+<p>State: </p>
+<p>Zip: </p>
+<p>Country: us</p>
+<p>Phone: </p>
+<p>Fax: </p>
+<p>Email: </p>
+<p>Customer Type: Company</p>
+<p>Credit Limit: 0.00</p>
+<p>Balance: 0.00</p>
+<p>Credit Remaining: 0.00</p>
+<p>Last Sale: </p>
+<p>Last Pay: </p>
+<p>Terms: cod</p>
+<p>Taxes: 32767</p>
+<p>Notes: </p>
+<p>Created By: installer@localhost</p>
+<p>Created: 2001-01-15 00:00:00-06</p>
+
+<h2>Date Formatting Tests</h2>
+<p>Created: 2001-01-15 00:00:00-06</p>
+<p>Created (internal): 2001-01-15 00:00:00-06</p>
+<p>Created (longTimestamp): Monday, January 15, 2001 12:00AM</p>
+<p>Created (shortTimestamp): 01-15-2001 12:00AM</p>
+
+<h2>Restricted Calls</h2>
+
+<h3>save()</h3>
+<p>Trying save()...</p>
+<p>Created (should be the same as above): 2001-01-15 00:00:00-06</p>
+
+<h3>remove()</h3>
+<p>Trying remove()...</p>
+<p>Created (should be the same as above): 2001-01-15 00:00:00-06</p>
+</body>
+</html>

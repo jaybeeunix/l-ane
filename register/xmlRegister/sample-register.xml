@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE registerinterface SYSTEM "http://ryotous.com/l-ane-xml/lane-xmlRegister-0.dtd">
+<registerinterface>
+  <default>
+    <author contact="http://ryotous.com/">Jason Burrell</author>
+    <creationtimestamp>2003-05-12</creationtimestamp>
+    <font size="18" weight="bold">courier</font> <!-- this is the default font -->
+  </default>
+
+  <!-- This is roughly the retailTk interface. -->
+  
+  <table width="2" height="4">
+    <cell columnspan="2"><infobox><font size="24">helvetica</font></infobox></cell>
+    <cell rowspan="2"><receiptbox /></cell>
+    <cell><entry><font size="18">helvetica</font></entry></cell>
+    <cell><summarybox /></cell>
+    <cell columnspan="2"><statusbar><font size="18" slant="italic">helvetica</font></statusbar></cell>
+  </table>
+</registerinterface>

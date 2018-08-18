@@ -1,0 +1,1317 @@
+#!/usr/bin/perl -w
+
+#reporter
+#Copyright 2004-2010 Jason Burrell
+#This program is part of L'ane. See COPYING for licensing information.
+
+#L'ane stuff
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+#end-o-lane stuff
+
+$::VERSION = (q$Revision: 1193 $ =~ /(\d+)/)[0];
+
+require 5.008;
+use strict;
+
+=pod
+
+=head1 NAME
+
+backOffice/xmlReporter/reporter - Access L'E<acirc>ne data for a report.
+
+=head1 SYNOPSIS
+
+reporter [input.xml [output.xml]]
+
+=head1 DESCRIPTION
+
+B<reporter> allows one to access L'E<acirc>ne data for generating reports via any XML file. As B<reporter> uses L'E<acirc>ne's objects for accessing the data, it is the prefered method to access data from this system.
+
+B<reporter> will read documents passed as arguments to the program and C<STDIN>. B<ALL> output is directed to C<STDOUT>. One should only pass a single XML file to B<reporter> per invocation of the program (see L</BUGS>).
+
+=head2 Input Format
+
+B<NOTE:> B<reporter> only operates on elements in it's namespace: C<http://l-ane.net/l-ane-xml/xmlReporter0> (the prerelease version). All other elements are passed through to the output document. This document assumes the namespace prefix C<rpt> has been assigned to that namespace.
+
+
+
+=head3 XML Elements
+
+=over
+
+=item <rpt:call />
+
+Make a method call on an object. This element can not be used to call C<save()> nor C<remove()> and should not be used to alter the datastore otherwise. The return value is saved as C<Reporter.lastCall> (see L</Reporter Object>).
+
+=over
+
+=item @object
+
+The object (actually class) on which to make the call
+
+=item @method
+
+The name of the method to call
+
+=item @context
+
+The Perl context under which to make this method call
+
+=over
+
+=item scalar
+
+Scalar (string and number) context (default)
+
+=item array
+
+Array context
+
+=back
+
+=item @argumentN (where N is an integer)
+
+The zero-based argument list (@argument0, @argument1, ... @argumentN). These arguments are Reporter objects (see L</Objects>).
+
+=back
+
+=item <rpt:foreach> ... </rpt:foreach>
+
+Processes the content (children and text) of this element for each element of the set.
+
+=over
+
+=item @set
+
+An object that represents a set (Perl array) (ie Sale.items)
+
+=item @element
+
+The object that will serve as this foreach loop's "current element" variable (ie "i"). This object will be assigned the current element during each iteration of the loop.
+
+=back
+
+=item <rpt:if> ... </rpt:if>
+
+Processes the content (children and text) of this element conditionally. If the sentence (subject-verb-object) is true, the content is processed.
+
+=over
+
+=item @subject
+
+The subject of the condition (see L</Objects>)
+
+=item @verb
+
+The verb of the condition (see L</Verbs>)
+
+=item @object
+
+The object of the condition's verb  (see L</Objects>)
+
+=back
+
+=item <rpt:output />
+
+Replaces the element with the data specified in @value
+
+=over
+
+=item @value
+
+The object member to return in C<ObjectClass.memberName> form.
+
+=item @format
+
+The format of @value, where the optional C<(n)> (below) specifies blank padding where the total field width is at least C<abs(n)> characters wide. When C<(n)> is positive, the output will be padded on the left (right-justified). When C<(n)> is negative, the output will be padded on the right (left-justified). This usage of negative/positive values follows L<printf>.
+
+=over
+
+=item internal[(n)]
+
+No formatting (default)
+
+=item money[(n)]
+
+Locale processed (currency symbols attached per the user's Locale setting)
+
+=item longDate[(n)]
+
+A date formatted according to the "longDate" Locale setting
+
+=item shortDate[(n)]
+
+A timestamp formatted according to the "shortDate" Locale setting
+
+=item longTimestamp[(n)]
+
+A timestamp formatted according to the "longTimestamp" Locale setting
+
+=item shortTimestamp[(n)]
+
+A timestamp formatted according to the "shortTimestamp" Locale setting
+
+=item longTime[(n)]
+
+A timestamp formatted according to the "longTime" Locale setting (the date is stripped off)
+
+=item shortTime[(n)]
+
+A timestamp formatted according to the "shortTime" Locale setting (the date is stripped off)
+
+=back
+
+=back
+
+=item <rpt:prompt />
+
+A specific input element. C<rpt:prompt /> elements must be children of C<rpt:promptset>.
+
+=over
+
+=item @textKey
+
+The L<Locale> key of the prompt
+
+=item @textDefault
+
+The default text of the prompt, if L<Locale> does not contain the text
+
+=item @variable
+
+The L<UserInterface> attribute in which to save the variable
+
+=item @type
+
+The type of the variable
+
+=over
+
+=item date
+
+A date string
+
+=item integer(n)
+
+A integer of I<n> decimal digits
+
+=item money
+
+A currency amount
+
+=item numeric(n)
+
+A decimal numeric value with I<n> decimal digits
+
+=item text(n)
+
+A string of I<n> characters
+
+=back
+
+=back
+
+=item <rpt:promptset>...</rpt:promptset>
+
+A set of user queries to be presented at once to the user.
+
+=back
+
+=head3 Objects
+
+B<Objects> are accessed via their standard names (ie C<Sale>). Because XML is case-sensitive, B<reporter> is case-sensitive.
+
+B<Object members> are accessed via their standard names, with the standard object name's prefixed (ie C<Customer.coName>).
+
+B<Constants> are specified by the pseudo-object, C<Constant> (ie C<Constant.12345>). Everything after the dot is included in the constant, including whitespace.
+
+B<Lists> are specified by the pseudo-object, C<List> (ie C<List.1,5,3> gives the set of objects whose C<value> members are 1, 5, and 3). The values are comma separated.
+
+B<Sets of Constants> are specified by the pseudo-object, C<SetConstants> (ie C<SetConstants.1 5> gives the set of objects whose C<value> members are 1, 2, 3, 4, and 5). Everything after the dot but before whitespace is the starting value of the set; everything after the whitespace is the ending value of the set. These values should only be integers. (This operation is implimented via Perl's range operator C<..>.) (A better title for this option would have been C<Range>.)
+
+=head4 Reporter Object
+
+The object C<Reporter> is a convience object for reporter tools. It has a member C<lastCall> which contains the return value of the last <rpt:call />. It also stores the return values of the last array in integer-named members C<0>, C<1>, C<2>, etc. It also provides the following methods:
+
+=over
+
+=item addDaysToDate()
+
+Returns the date C<argument0> days after the date C<argument1> in ISO (YYYY-MM-DD) format.
+
+=item arrayify()
+
+Changes (or creates) the integer-named member C<argument0> to the current value of C<lastCall>.
+
+=item cat()
+
+Concatenates (string-wise) the arguments.
+
+=item div()
+
+Integer quotient of argument0 divided by argument1
+
+=item divFloat()
+
+Decimal value of argument0 divided by argument1
+
+=item get()
+
+Sets the object's property C<lastCall> to the value of the property named argument0. (This provides an indirection. C<lastCall> is not set to C<argument0> but to C<Reporter.argument0>'s value.
+
+=item length()
+
+String length of argument0
+
+=item makeDate()
+
+Creates a date by adding argument1 years, argument2 months, and argument3 days to the date argument0. If the offsets (argument1 - 3) are prefixed with an C<=>, the value of that element is fixed to the amount listed.
+
+=item mod()
+
+The modulus of argument0 divided by argument1
+
+=item now()
+
+Returns the current (UTC) date and time in PostgreSQL-ISO (YYYY-MM-DD HH:MM:SS) format. The return value of this subroutine is cached as the member C<now>. Unlike L</today()>, the returned value is not time-zone local; thus, you should likely use this value only after formatting it via C<output>'s C<shortTimestamp> or C<longTimestamp>.
+
+=item product()
+
+Multiplies the values passed to it.
+
+=item s()
+
+Substitutes argument2 in the string argument0 by applying the regex in argument1. (implimented with Perl's C<s///>)
+
+=item set()
+
+Sets the object's property argument0 to the value argument1. This method will not change the values of C<lastCall>, C<today>, nor C<now>.
+
+=item substr()
+
+Substring of argument2 characters from argument1 characters from the begining of argument0
+
+=item sum()
+
+Sums (adds) the values passed to it.
+
+=item today()
+
+Returns the current (timezone-local) date in ISO (YYYY-MM-DD) format. The return value of this subroutine is cached as the member C<today>.
+
+=back
+
+=head4 UserInterface Object
+
+The object C<UserInterface> defines B<reporter>'s interaction with users.
+
+=head3 Verbs
+
+B<reporter> recognizes the following, obviously Perl, verbs (in the samples, I<X> is the subject, and I<Y> is the object of the verb) :
+
+=head4 Numeric Operations
+
+=over
+
+Equality: == (X is equal to Y)
+
+Exclusively Less: E<lt> (X is less than Y)
+
+Exclusively Greater: E<gt> (X is greater than Y)
+
+Inclusively Less: E<lt>= (X is less than or equal to Y)
+
+Inclusively Greater: E<gt>= (X is greater than or equal to Y)
+
+Inequality: != (X is not equal to Y)
+
+=back
+
+=head4 String Operations
+
+=over
+
+Equality: eq (X is equal to Y)
+
+Exclusively Less: lt (X is less than Y)
+
+Exclusively Greater: gt (X is greater than Y)
+
+Inclusively Less: le (X is less than or equal to Y)
+
+Inclusively Greater: ge (X is greater than or equal to Y)
+
+Inequality: ne (X is not equal to Y)
+
+Regular Expression Match: match (X matches the regex Y)
+
+Regular Expression Does Not Match: nomatch (X does not match the regex Y)
+
+=back
+
+=head4 Boolean Operations
+
+=over
+
+Truth: istrue (X is true: Y is ignored )
+
+Falsehood: isfalse (X is false: Y is ignored)
+
+=back
+
+=head1 CONFIGURATION
+
+The following L<LanePOS::SysString>s configure B<reporter>.
+
+=over
+
+=item Lane/BackOffice/Reporter/Ignorable Space
+
+Setting to C<true> causes B<reporter> to discard XML ignorable whitespace. The default is C<false> which preserves ignorable whitespace in the output document. B<This option is scheduled to be renamed to "Lane/BackOffice/Reporter/Ignore Ignorable Whitespace" when SysString allows longer keynames.>
+
+=back
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program has not been tested thoroughly.
+
+=item *
+
+One can only pass a single XML document per invocation of the program.
+
+=back
+
+=head1 SEE ALSO
+
+The L'E<acirc>ne Website L<http://l-ane.net/>, the "XML Report Tool" Task L<http://tasks.l-ane.net/show_bug.cgi?id=40>
+
+=cut
+
+package LanePOS::Reporter;
+
+#this is the pseudoclass that represents the reporter object
+#it's simpler to define it here than to make "Reporter." a special case
+sub new
+{
+    my ($class) = @_;
+
+    my $me = {
+	'lastCall' => '',
+	'user' => scalar(getpwuid($>)),
+        #new-style lane user: username@hostname: we don't have a way of getting more than the username from the database :-(
+    };
+    bless $me, $class;
+    return $me;
+}
+
+sub sum
+{
+    shift; #drop me
+
+    my $r;
+    $r += $_ foreach (@_);
+    return $r;
+}
+
+sub product
+{
+    shift; #drop me
+
+    my $r = shift; #don't want multiplication by zero
+    $r *= $_ foreach (@_);
+    return $r;
+}
+
+sub mod
+{
+    return $_[1] % $_[2];
+}
+
+sub div
+{
+    use integer; #integer division
+
+    return $_[1] / $_[2];
+}
+
+sub divFloat
+{
+    return $_[1] / $_[2];
+}
+
+sub substr
+{
+    return substr($_[1], $_[2], $_[3]);
+}
+
+sub length
+{
+    return 0 if !defined $_[1];
+    return length $_[1];
+}
+
+sub s
+{
+    my ($me, $t, $a, $b) = @_;
+
+    $t =~ s/$a/$b/;
+    #$t = eval '$t =~ s/' . $a . '/' . $b . '/; return $t;';
+    return $t;
+}
+
+sub today
+{
+    my @t = localtime;
+    $_[0]->{'today'} = sprintf('%04d-%02d-%02d', $t[5] + 1900, $t[4] + 1, $t[3]);
+    return $_[0]->{'today'};
+}
+
+sub now
+{
+    my @t = gmtime; 
+
+    $_[0]->{'now'} = sprintf('%04d-%02d-%02d %02d:%02d:%02d+00', $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0]);
+    return $_[0]->{'now'};
+}
+
+sub cat
+{
+    shift; #drop $me
+    return join('', @_);
+}
+
+sub makeDate
+{
+    my ($me, $start, $y, $m, $d) = @_;
+
+    my @t = (0, 0, 0, 0, 0, 0);
+    if($start =~ /(\d{4})-(\d{2})-(\d{2})/)
+    {
+	$t[5] = $1 - 1900;
+	$t[4] = $2 - 1;
+	$t[3] = $3;
+    }
+    elsif($start =~ /(\d{2})-(\d{2})-(\d{4})/)
+    {
+	$t[5] = $3 - 1900;
+	$t[4] = $2 - 1;
+	$t[3] = $1;
+    }
+    if($y =~ /^=(\d+)/)
+    {
+	$y = $1 - 1900;
+	$t[5] = $y;
+    }
+    else
+    {
+	$t[5] += $y;
+    }
+    if($m =~ /^=(\d+)/)
+    {
+	$m = $1 - 1;
+	$t[4] = $m;
+    }
+    else
+    {
+	$t[4] += $m;
+    }
+    if($d =~ /^=(\d+)/)
+    {
+	$t[3] = $1;
+    }
+    else
+    {
+	$t[3] += $d;
+    }
+    print STDERR 'Reporter::makeDate() @t=', join(',', @t), "\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    use Time::Local 'timelocal_nocheck';
+    use POSIX 'strftime';
+    return strftime('%Y-%m-%d', localtime(timelocal_nocheck(@t)));
+}
+
+sub addDaysToDate
+{
+    my ($me, $days, $date) = @_;
+    print STDERR "Reporter::addDaysToDate($me, $days, $date)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    my @t = (0,0,0,0,0,0);
+    if($date =~ /(\d{4})-(\d{2})-(\d{2})/)
+    {
+	$t[5] = $1 - 1900;
+	$t[4] = $2 - 1;
+	$t[3] = $3;
+    }
+    elsif($date =~ /(\d{2})-(\d{2})-(\d{4})/)
+    {
+	$t[5] = $3 - 1900;
+	$t[4] = $1 - 1;
+	$t[3] = $2;
+    }
+    use Time::Local 'timelocal_nocheck';
+    use POSIX 'strftime';
+    $t[3] += $days;
+    print STDERR "Reporter::addDaysToDate() t=(", join(',',@t), ")\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    return strftime('%Y-%m-%d', localtime(timelocal_nocheck(@t)));
+}
+
+sub arrayify
+{
+    my ($me, $e) = @_;
+    print STDERR "Reporter::arrayify($me, $e) lastCall is $me->{'lastCall'}\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    
+    $me->{$e} = $me->{'lastCall'};
+}
+
+sub get
+{
+    my ($me, $mem) = @_;
+
+    $me->{'lastCall'} = $me->{$mem};
+}
+
+sub set
+{
+    my ($me, $member, $val) = @_;
+
+    print STDERR "Reporter::set($member, $val)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    return 0 if $member =~ /^(lastCall|today|now)$/;
+    $me->{$member} = $val;
+    print STDERR "Reporter::set($member, $val) Reporter->\$member=$me->{$member}\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /Reporter/;
+    return 1;
+}
+
+package LanePOS::UserInterface; #this is a reporter specific interface too
+
+sub new
+{
+    my ($class, $lc) = @_;
+
+    my $me = {
+	'lc' => $lc,
+	'_set' => [
+		   #each element is a hash with the following keys:
+		   # text: the label presented to the user
+		   # variable: the variable to which the input is assigned
+		   # type: the type of variable
+	],
+	
+    };
+    bless $me, $class;
+    return $me;
+}
+
+sub questionUser
+{
+    my ($me) = @_;
+
+    print STDERR "UserInterface->questionUser(): starting...\n";
+    #formats and questions the user
+    foreach my $p (@{$me->{'_set'}})
+    {
+	print STDERR "\tUserInterface->questionUser(): text: ", $p->{'text'}, "\n";
+	print STDERR "\tUserInterface->questionUser(): variable: ", $p->{'variable'}, "\n";
+	print STDERR "\tUserInterface->questionUser(): type: ", $p->{'type'}, "\n";
+    }
+    print STDERR "UserInterface->questionUser(): done.\n";
+}
+
+1;
+
+package LanePOS::UserInterface::Tk;
+
+use Tk;
+use base 'LanePOS::UserInterface';
+
+sub questionUser
+{
+    my ($me) = @_;
+
+    #create the window, prompt the user, everything must be done here
+    my $root = MainWindow->new;
+    $root->title('L\'ane: Reporter: ' . $me->{'title'});
+    my $frmPrompt = $root->Frame(-relief => 'flat', -borderwidth => '0');
+    $frmPrompt->grid(-column => '1', -row => '1', -columnspan => '1', -sticky => 'nsew');
+    my $frmButtons = $root->Frame(-relief => 'flat', -borderwidth => '0');
+    $frmButtons->grid(-column => '1', -row => '2', -columnspan => '1');#, -sticky => 'nsew');
+    my $bProcess = $frmButtons->Button(
+				       -text => $me->{'lc'}->get('Lane/BackOffice/Buttons/Process'),
+				       -command => sub {
+					   #actually, we're done
+					   $root->destroy;
+				       },
+				       );
+    $bProcess->grid(-column => '1', -row => '1');
+    my $bQuit = $frmButtons->Button(
+				    -text => $me->{'lc'}->get('Lane/BackOffice/Buttons/Quit'),
+				    -command => sub {
+					exit 1;
+				    },
+			       );
+    $bQuit->grid(-column => '2', -row => '1');
+
+    #put all of the prompts in a frame
+    use Tk::LabEntry;
+    foreach my $p (@{$me->{'_set'}})
+    {
+	my $w =
+	$frmPrompt->LabEntry(
+			     -label => $p->{'text'},
+			     -labelPack => ['-side' => 'left', '-anchor' => 'w'],
+			     -textvariable => \$me->{$p->{'variable'}},
+			     -validate => 'key',
+			     -vcmd => sub {&validateStr(20,@_);},
+			     -width => '20',
+			     -invcmd => sub { $root->bell(); },
+			     )->pack(-anchor => 'e');
+	my $m;
+	if($p->{'type'} eq 'date')
+	{
+	    $w->configure(-vcmd => sub {&validateStr(20,@_);});
+	}
+	elsif($p->{'type'} eq 'money')
+	{
+	    $w->configure(-vcmd => sub {&validateDec($me->{'lc'}->get('Lane/Locale/Money/DecimalDigits'), @_);});
+	}
+	elsif($p->{'type'} =~ /numeric\((\d+)\)/)
+	{
+	    $m = $1;
+	    $w->configure(-vcmd => sub {&validateDec($m, @_);}, -width => $m + 1);
+	}
+	elsif($p->{'type'} =~ /integer\((\d+)\)/)
+	{
+	    $m = $1;
+	    $w->configure(-vcmd => sub {&validateInt($m, @_);}, -width => $m + 1);
+	}
+	elsif($p->{'type'} =~ /text\((\d+)\)/)
+	{
+	    $m = $1;
+	    $w->configure(-vcmd => sub {&validateStr($m, @_);}, -width => $m + 1);
+	}
+	
+#handled above
+#	else
+#	{
+#	    $w->configure(-vcmd => sub {&validateStr(20,@_);});
+#	}
+    }
+
+    #now, start Tk processing
+    Tk::MainLoop;
+    return;
+}
+
+sub validateInt
+{
+    my ($len, $new, $chars, $curr, $ndx, $type) = @_;
+    
+    #allow the fld to be blank
+    print STDERR "validateInt($len, $new)\n";
+    return 1 if $new =~ /^\d{0,$len}$/;
+    return 0;
+}
+
+sub validateDec
+{
+    my ($dec, $new, $chars, $curr, $ndx, $type) = @_;
+    
+    #allow the fld to be blank
+    return 1 if $new =~ /^\d*(\.\d{0,$dec})+$/;
+    return 0;
+}
+
+sub validateStr
+{
+    my ($len, $new, $chars, $curr, $ndx, $type) = @_;
+
+    return 1 if length($new) <= $len;
+    return 0;
+}
+
+1;
+
+package SaxyReporter;
+
+use base 'XML::SAX::Base';
+
+use LanePOS::Locale;
+use LanePOS::SysString;
+
+sub new
+{
+    my ($class) = @_;
+    my $me = {
+	'ignore' => [0], #used by conditionals
+	'myNamespace' => 'http://l-ane.net/l-ane-xml/xmlReporter0',
+	'lc' => Locale->new,
+	'obj' => {
+	    'Reporter' => LanePOS::Reporter->new,
+#	    'UserInterface' => LanePOS::UserInterface->new,
+	    'SysString' => SysString->new,
+	},
+	'events' => [], #used by looping constructs
+	'foreach' => [], #2d array
+	'foreaches' => 0,
+	'verbs' => qr/^(==|eq|<|lt|>|gt|<=|le|>=|ge|!=|ne|match|nomatch|istrue|isfalse)$/, #to limit perl-injection attacks
+	'opt' => {
+	    'ignoreIgnorableWhitespace' => 1,
+	},
+    };
+
+    $me->{'obj'}{'UserInterface'} = LanePOS::UserInterface::Tk->new($me->{'lc'});
+
+    bless $me, $class;
+
+    #various l'ane-style options
+    ################
+    #ignorable whitespace--this SHOULD be Lane/BackOffice/Reporter/Ignore Ignorable Whitespace,
+    #but sysstrings only allows 40c keys--FIX THAT!
+    $me->{'opt'}{'ignoreIgnorableWhitespace'} = 0 if $me->{'obj'}{'SysString'}->open('Lane/BackOffice/Reporter/Ignorable Space') and ! $me->{'obj'}{'SysString'}{'data'};
+    print STDERR "$0: configuration: Lane/BackOffice/Reporter/Ignorable Space is ", $me->{'opt'}{'ignoreIgnorableWhitespace'}, "\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+#    $me->SUPER::new();
+
+    $me->set_dtd_handler($me);
+    $me->set_decl_handler($me);
+    $me->set_lexical_handler($me);
+#    $me->set_feature('http://xml.org/sax/properties/declaration-handler', $me);
+    return $me;
+}
+
+sub start_element
+{
+    my ($me, $e) = @_;
+    print STDERR "$0: start_element($e): STARTING $e->{'LocalName'}, $e->{'NamespaceURI'}.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0 and !($e->{'NamespaceURI'} eq $me->{'myNamespace'} and $e->{'LocalName'} eq 'foreach'))
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['start_element', $me->clone($e)];
+	return;
+    }
+
+    if($e->{'NamespaceURI'} ne $me->{'myNamespace'})
+    {
+	print STDERR "$0: start_element(): $e->{'Name'} isn't in my namespace.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	#pass it through
+	print $me->reconstituteE($e) if !$me->{'ignore'}[-1];
+    }
+    else
+    {
+	print STDERR "$0: start_element(): $e->{'Name'} IS in my namespace.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	#reporter processing goes here
+	if($e->{'LocalName'} eq 'output')
+	{
+	    $me->output($e->{'Attributes'}) if !$me->{'ignore'}[-1];
+	}
+	elsif($e->{'LocalName'} eq 'call')
+	{
+	    $me->methodCall($e->{'Attributes'}) if !$me->{'ignore'}[-1]
+	}
+	elsif($e->{'LocalName'} eq 'promptset')
+	{
+	    #start a promptset, reset the existing one if need be
+	    $me->{'obj'}{'UserInterface'}{'_set'} = [] if !$me->{'ignore'}[-1];
+	}
+	elsif($e->{'LocalName'} eq 'prompt')
+	{
+	    #start a prompt
+	    if(!$me->{'ignore'}[-1])
+	    {
+		die "$0: prompt: I need \"textKey\", \"textDefault\", \"variable\", and \"type\" attributes!\n" if !exists $e->{'Attributes'}{'{}textKey'} or !exists $e->{'Attributes'}{'{}textDefault'} or !exists $e->{'Attributes'}{'{}variable'} or !exists $e->{'Attributes'}{'{}type'};
+		my $txt = $me->{'lc'}->getOrDefault($e->{'Attributes'}{'{}textKey'}{'Value'}, $e->{'Attributes'}{'{}textDefault'}{'Value'});
+		#if the @type is 'fixed', we can handle it directly
+		if($e->{'Attributes'}{'{}type'}{'Value'} eq 'fixed')
+		{
+		    $me->{'obj'}{'UserInterface'}{$e->{'Attributes'}{'{}variable'}{'Value'}} = $txt;
+		    return;
+		}
+		push @{$me->{'obj'}{'UserInterface'}{'_set'}}, {
+		    'text' => $txt,
+		    'variable' => $e->{'Attributes'}{'{}variable'}{'Value'},
+		    'type' => $e->{'Attributes'}{'{}type'}{'Value'},
+		};
+	    }
+	}
+	elsif($e->{'LocalName'} eq 'if')
+	{
+	    #check for nested ifs!
+	    #if we're in "ignore", don't check the sentence (condition)
+	    if($me->{'ignore'}[-1])
+	    {
+		push(@{$me->{'ignore'}}, 1); #keep our parent's "ignore"
+		return;
+	    }
+	    #set "ignore"
+	    #
+            if($e->{'Attributes'}{'{}verb'}{'Value'} =~ /^is(true|false)$/)
+            {
+                $e->{'Attributes'}{'{}object'}{'Value'} = 'Constant.'; #to get past the next check
+            }
+	    #this is what was conditional()
+	    die "$0: if: I need \"subject\", \"object\", and \"verb\" attributes!\n" if(!exists $e->{'Attributes'}{'{}subject'} or !exists $e->{'Attributes'}{'{}object'} or !exists $e->{'Attributes'}{'{}verb'} or !($e->{'Attributes'}{'{}verb'}{'Value'} =~ $me->{'verbs'}));
+	    my ($s, $o) = (
+			   $me->derefObj($e->{'Attributes'}{'{}subject'}{'Value'}),
+			   $me->derefObj($e->{'Attributes'}{'{}object'}{'Value'})
+			   );
+	    #end of the former conditional()
+
+	    if($e->{'Attributes'}{'{}verb'}{'Value'} =~ /^match$/)
+	    {
+		#regex
+		push(@{$me->{'ignore'}}, ! eval($me->qtPerl($s) . ' =~ m' . $me->qtPerl($o)));
+	    }
+	    elsif($e->{'Attributes'}{'{}verb'}{'Value'} =~ /^nomatch$/)
+	    {
+		#regex
+		push(@{$me->{'ignore'}}, ! eval($me->qtPerl($s) . ' !~ m' . $me->qtPerl($o)));
+	    }
+	    elsif($e->{'Attributes'}{'{}verb'}{'Value'} =~ /^istrue$/)
+	    {
+		#for simple booleans
+		push(@{$me->{'ignore'}}, ! eval($me->qtPerl($s)));
+	    }
+	    elsif($e->{'Attributes'}{'{}verb'}{'Value'} =~ /^isfalse$/)
+	    {
+		#for simply booleans
+		push(@{$me->{'ignore'}}, ! eval('!' . $me->qtPerl($s)));
+	    }
+	    else #regular verbs
+	    {
+		push(@{$me->{'ignore'}}, ! eval($me->qtPerl($s) . $e->{'Attributes'}{'{}verb'}{'Value'} . $me->qtPerl($o)));
+	    }
+	}
+	elsif($e->{'LocalName'} eq 'foreach')
+	{
+	    return if $me->{'ignore'}[-1];
+	    #check for the required attributes
+	    if(!exists $e->{'Attributes'}{'{}set'} or !exists $e->{'Attributes'}{'{}element'})
+	    {
+		die "start_element():foreach: I require both \"set\" and \"element\" attributes.";
+	    }
+	    #if we're inside of another foreach, wait our turn
+	    if($#{$me->{'foreach'}} >= 0)
+	    {
+		push @{$me->{'foreach'}[-1][2]}, ['start_element', $me->clone($e)];
+		$me->{'foreaches'}++;
+		return;
+	    }
+	    push @{$me->{'foreach'}}, [$e->{'Attributes'}{'{}set'}{'Value'}, $e->{'Attributes'}{'{}element'}{'Value'}, []];
+	}
+	else
+	{
+	    print STDERR "$0: start_element(): I don't understand \"$e->{'LocalName'}\" elements.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	}
+    }
+}
+
+sub end_element
+{
+    my ($me, $e) = @_;
+    print STDERR "$0: end_element($e): ENDING.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0 and !($e->{'LocalName'} eq 'foreach' and $e->{'NamespaceURI'} eq $me->{'myNamespace'}))
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['end_element', $me->clone($e)];
+	return;
+    }
+
+    if($e->{'NamespaceURI'} ne $me->{'myNamespace'})
+    {
+	print STDERR "$0: end_element(): $e->{'Name'} isn't in my namespace.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	#pass it through
+	print '</', $e->{'Name'}, '>' if !$me->{'ignore'}[-1];
+    }
+    else
+    {
+	print STDERR "$0: end_element(): $e->{'Name'} IS in my namespace.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	#reporter processing goes here
+
+	#check for ifs
+	if($e->{'LocalName'} eq 'if')
+	{
+	    die "nesting problem with ifs! (your parser should have caught this!)\n" if $#{$me->{'ignore'}} < 0;
+	    pop @{$me->{'ignore'}};
+	}
+	elsif($e->{'LocalName'} eq 'promptset')
+	{
+	    #query the user
+	    $me->{'obj'}{'UserInterface'}->questionUser() if !$me->{'ignore'}[-1];
+	}
+	elsif($e->{'LocalName'} eq 'foreach')
+	{
+	    return if $me->{'ignore'}[-1];
+	    die "nesting problem with foreaches! (your parser should have caught this!)\n" if $#{$me->{'foreach'}} < 0;
+
+	    #if we're inside of another foreach, wait our turn
+	    if($me->{'foreaches'} > 0)
+	    {
+		push @{$me->{'foreach'}[-1][2]}, ['end_element', $me->clone($e)];
+		$me->{'foreaches'}--;
+		return;
+	    }
+
+	    my $current = pop @{$me->{'foreach'}}; #have to pop before playing, so they'll write out
+	    #foreach $me->{'obj'}{$me->{'foreach'}[-1][1]} (@{$me->{'foreach'}[-1][0]})
+	    foreach my $i (@{$me->derefObj($current->[0])})
+	    {
+		$me->{'obj'}{$current->[1]} = $i;
+		#this "plays" the events for each call of the loop
+		foreach my $j (@{$current->[2]})
+		{
+		    my $s = $j->[0];
+		    my @a = @{$j};
+		    shift @a;
+		    $me->$s(@a);
+		}
+	    }
+	}
+    }
+}
+
+sub ignoreable_whitespace
+{
+    my ($me, $e) = @_;
+
+    #check to see if we are ignoring all ignorable whitespace
+    return 1 if $me->{'opt'}{'ignoreIgnorableWhitespace'};
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0)
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['ignoreable_whitespace', $me->clone($e)];
+	return;
+    }
+
+    print $e->{'Data'} if !$me->{'ignore'}[-1];
+}
+
+sub characters
+{
+    my ($me, $e) = @_;
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0)
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['characters', $me->clone($e)];
+	return;
+    }
+
+    print $me->safeOutput($e->{'Data'}) if !$me->{'ignore'}[-1];
+}
+
+sub start_document
+{
+    #sax *really* needs a way for us to get at the value of the
+    #xml declaration's "standalone" pseudoattribute
+    my ($me, $e) = @_;
+
+    #let's make an xml declaration, kids...
+
+    #turn on UTF-8 for the output
+    binmode(STDOUT, ':utf8');
+
+    $main::xmldecl = "<?xml version='1.0' encoding='UTF-8'?>" if !defined $main::xmldecl;
+    $main::xmldecl =~ s/encoding\s*=\s*(['"])[^\1]*?\1/encoding='UTF-8'/; #"']); damn emacs
+
+    print "$main::xmldecl\n", (defined $main::doctype ? "$main::doctype\n" : '');
+    
+}
+
+sub end_document
+{
+    my ($me, $e) = @_;
+    print "\n";
+}
+
+sub processing_instruction
+{
+    my ($me, $e) = @_;
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0)
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['processing_instruction', $me->clone($e)];
+	return;
+    }
+
+    print '<?', $e->{'Target'}, ' ', $e->{'Data'}, '?>' if !$me->{'ignore'}[-1];
+}
+
+sub comment
+{
+    my ($me, $e) = @_;
+
+    #if we are in a foreach loop, save this call and return
+    if($#{$me->{'foreach'}} >= 0)
+    {
+	push @{$me->{'foreach'}[-1][2]}, ['comment', $me->clone($e)];
+	return;
+    }
+
+    print '<!-- ', $e->{'Data'}, '-->' if !$me->{'ignore'}[-1];
+}
+
+sub doctype_decl
+{
+    my ($me) = shift;
+    print STDERR "$0: HEY! doctype_decl(", join(',', @_), ") IS FIXED\n";# if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+    return;
+}
+
+sub xml_decl
+{
+    my ($me) = shift;
+    print STDERR "$0: HEY! xml_decl(", join(',', @_), ") IS FIXED!\n";# if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+}
+
+sub reconstituteE
+{
+    my ($me, $e) = @_;
+    print STDERR "$0: reconstitute($e)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+    my $r = '<' . $e->{'Name'};
+
+    #attributes here
+    foreach my $a (keys %{$e->{'Attributes'}})
+    {
+	#drop my namespace declaration
+	next if $e->{'Attributes'}{$a}{'Prefix'} eq 'xmlns' and $e->{'Attributes'}{$a}{'Value'} eq $me->{'myNamespace'};
+	
+	$r .= ' ' . $e->{'Attributes'}{$a}{'Name'} . '=\'' . $me->escAttr($e->{'Attributes'}{$a}{'Value'}) . '\'';
+    }
+    $r .= '>';
+    return $r;
+}
+
+sub escAttr
+{
+    my ($me, $v) = @_;
+    print STDERR "$0: escAttr($v)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+    $v =~ s/([<>"&])/'&#' . ord($1) . ';'/ge; #"]); damn emacs
+    return $v;
+}
+
+#######################################################
+# XML Reporter Subs
+#######################################################
+
+sub qtPerl
+{
+    my ($me, $t) = @_;
+    $t = '' if !defined $t;
+    $t =~ s/'/\'/g;
+    return "'$t'";
+}
+
+sub methodCall
+{
+    my ($me, $a) = @_;
+
+    print STDERR "$0: methodCall($a)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+    return if !exists $a->{'{}object'} or !exists $a->{'{}method'} or $a->{'{}method'}{'Value'} =~ /^(save|remove)/i;
+
+    print STDERR "$0: methodCall($a): calling ", $a->{'{}object'}{'Value'}, '->', $a->{'{}method'}{'Value'}, "\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+    #for ease of typing
+    my $o = $a->{'{}object'}{'Value'};
+
+    #first, check to see if the object exists
+    if(!exists $me->{'obj'}{$o})
+    {
+	eval "require LanePOS::$o" or die "couldn't find the requested object class (LanePOS::$o)";
+	$me->{'obj'}{$o} = eval "require LanePOS::$o; return LanePOS::$o->new;";
+	die "methodCall(): new failed [$@]" if !defined $me->{'obj'}{$o};
+    }
+    my @arg;
+
+    /{}argument(\d+)/ ? $arg[$1] = $me->derefObj($a->{$_}{'Value'}) : next foreach (keys %{$a});
+    my $m = $a->{'{}method'}{'Value'};
+    #check the context
+    if(defined $a->{'{}context'} and $a->{'{}context'}{'Value'} eq 'array')
+    {
+	my @r = eval {$me->{'obj'}{$o}->$m(@arg)};
+	#try to catch a broken(ish) case
+	if($#r == 0 and ref($r[0]) eq 'ARRAY')
+	{
+	    #someone passed us an array ref instead of an array, so they prolly shouldn't have used context='array'
+	    @r = @{$r[0]};
+	}
+	if(@r and !(ref($r[0]) eq 'HASH' or UNIVERSAL::isa($r[0], 'HASH')))
+	{
+	    $_ = {'value' => $_} foreach (@r);
+	}
+	$me->{'obj'}{'Reporter'}{'lastCall'} = \@r;
+	#for convience, save the values of @r as Reporter->{'element'}
+	$me->{'obj'}{'Reporter'}{$_} = $r[$_]->{'value'} foreach (0..$#r);
+    }
+    else
+    {
+	my $r = eval {$me->{'obj'}{$o}->$m(@arg)};
+	$me->{'obj'}{'Reporter'}{'lastCall'} = (defined $r ? $r : '0'); #@@@why is this nec'y?!?!
+    }
+}
+
+sub output
+{
+    my ($me, $a) = @_;
+
+    print STDERR "$0: output($a)\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+
+    return if !exists $a->{'{}value'};
+    
+    my $v = $me->derefObj($a->{'{}value'}{'Value'});
+
+    return if $me->{'ignore'}[-1];
+
+    use POSIX (); #for the date/time functions below
+
+    if(!exists $a->{'{}format'} or $a->{'{}format'}{'Value'} =~ /^internal/)
+    {
+	#just allow it to pass
+    }
+    elsif($a->{'{}format'}{'Value'} =~ /^money/)
+    {
+	$v = $me->{'lc'}->moneyFmt($v);
+    }
+    elsif($a->{'{}format'}{'Value'} =~ /^(long|short)(Time(stamp)?|Date)/)
+    {
+	$v = $me->{'lc'}->temporalFmt($a->{'{}format'}{'Value'}, $v);
+    }
+    else
+    {
+	#just in case...
+	print STDERR "$0: output($a): I don't know what format \"", $a->{'{}format'}{'Value'}, "\" is.\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+    }
+
+    #this is the space-padding code
+    my ($pad, $fmt);
+    if(exists $a->{'{}format'})
+    {
+	($fmt, $pad) = $a->{'{}format'}{'Value'} =~ /^(.*)\((-?\d+)\)$/;
+	$v = sprintf "%$pad." . abs($pad). "s", $v if defined($pad);
+    }
+    print $me->safeOutput($v) if $v;
+    return;
+}
+
+sub safeOutput
+{
+    my ($me, $t) = @_;
+
+    #only &amp; and &lt; are required by xml
+    if($t)
+    {
+        $t =~ s/&/&amp;/g;
+        $t =~ s/</&lt;/g;
+        $t =~ s/>/&gt;/g;
+    }
+    return $t;
+}
+
+sub derefObj
+{
+    #this sub returns the value of the object member, or various special
+    #constants
+    my ($me, $o) = @_;
+
+    #Constant.value syntax
+    if($o =~ /^Constant\.(.*)$/)
+    {
+	return defined $1 ? $1 : '';
+    }
+    #"SetConstants.Start End" syntax
+    elsif($o =~ /^SetConstants\.(\d+)\s+(\d+)/)
+    {
+	my @r;
+	push @r, {'value' => $_} foreach ($1..$2);
+	return \@r
+    }
+    #"List.n1,n2..." syntax
+    elsif($o =~ /^List\.(.+)/)
+    {
+	my @r;
+	push @r, {'value' => $_} foreach (split /[,]/, $1);
+	return \@r
+    }
+    #Object.member syntax
+    #if($o =~ /^(\w+)\.(\w+)$/)
+    elsif($o =~ /^(\w+)\.(\w+)$/)
+    {
+	return $me->{'obj'}{$1}{$2} if exists $me->{'obj'}{$1};
+	print STDERR "$0: derefObj($o): Object.member syntax doesn't know about \"$o\"\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+	return ''; #don't know it
+    }    
+    else
+    {
+	#i don't know, just punt
+	print STDERR "$0: derefObj($o): I don't know about \"$o\". Constants are specified as \"Constant.VALUE\".\n";
+	return '';
+    }
+}
+
+sub clone
+{
+    my ($me, $d) = @_;
+    my $ref = ref($d);
+    if($ref eq 'HASH' or UNIVERSAL::isa($d, 'HASH'))
+    {
+	$d = {%{$d}};
+	foreach my $k (keys %{$d})
+	{
+	    next if !ref($d->{$k});
+	    $d->{$k} = $me->clone($d->{$k});
+	}
+	bless($d, $ref) if $ref ne 'HASH';
+    }
+    elsif($ref eq 'ARRAY' or UNIVERSAL::isa($d, 'ARRAY'))
+    {
+	$d = [@{$d}];
+	foreach my $k (@{$d})
+	{
+	    next if !ref($k);
+	    $k = $me->clone($k);
+	}
+	bless($d, $ref) if $ref ne 'ARRAY';
+    }
+    #should we handle various other blessed types too?
+    return $d;
+}
+
+#######################################################
+# main
+#######################################################
+#here lies the (brief) system interaction
+package main;
+
+#@@@what about the input file's encoding?!
+my $in; #the input file
+$in .= $_ while(<>);
+
+#ideally, the xml declaration and the doctype would be available via
+#xml_decl() and doctype_decl(). While I do get an xml_decl() with LibXML,
+#I can't seem to get a doctype_decl() with anything. :-(
+#...so, HACK HACK HACK. HACK HACK.
+#my ($xmldecl, $doctype);
+$::xmldecl = $1 if $in =~ /(<\?xml\s+.*?\?>)/;
+print STDERR "$0: the XML Declaration (work-around) is $::xmldecl\n" if $::xmldecl and exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+$::doctype = $1 if $in =~ /(<!DOCTYPE\s.*?>)/; #isn't that too general?
+print STDERR "$0: the DOCTYPE (work-around) is $::doctype\n" if $::doctype and exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlReporter/;
+#end-o-work-'round
+
+use XML::SAX;
+
+my $p = XML::SAX::ParserFactory->parser(Handler => SaxyReporter->new);
+$p->parse_string($in);

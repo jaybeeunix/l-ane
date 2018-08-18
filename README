@@ -1,0 +1,19 @@
+README
+Document Version: $Id: README 1113 2010-09-15 14:21:56Z jason $
+
+L'ane
+Copyright 2002-2010 Jason B. Burrell.
+Copyright 2000, 2001 Burrell Business Systems.
+Contains portions of L'ane BMS, Copyright 1995-2001 Burrell Business Systems.
+
+This software is distributed under the terms of the GPL. See COPYING for
+details.
+
+LanePOS is an integrated Point-Of-Sale (POS) and backoffice system for cash-
+register-like computer systems. It allows a business to track inventory,
+sales, and customers in a single or multi register system. This system allows
+any backoffice computer to access the system for reporting or modification
+(via an X11 wrapper like VNC).
+
+See http://wiki.l-ane.net/wiki/Main_Page for current, up-to-date
+information about L'ane.

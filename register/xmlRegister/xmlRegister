@@ -1,0 +1,176 @@
+#!/usr/bin/perl
+
+#xmlRegister Copyright 2005-2010 Jason Burrell
+#$Id: xmlRegister 1171 2010-10-14 20:59:46Z jason $
+
+=pod
+
+=head1 NAME
+
+register/xmlRegister/xmlRegister - Render and Run a  L'E<acirc>ne XML Register File.
+
+=head1 SYNOPSIS
+
+./xmlRegister kit [url | filename]
+
+=head1 DESCRIPTION
+
+C<xmlRegister> renders and runs the XML Register file at B<url> or B<filename> using the interface library B<kit> (currently, only B<Tk> is supported by any version of the XML Register tools).
+
+=head1 ARGUMENTS
+
+=over
+
+=item kit
+
+The toolkit used to display the interface. Currently, only B<Tk> is supported.
+
+=item url
+
+The URL of the XML Register file. This URL can use any protocol your L<LWP> library understands as well as the L'E<acirc>ne specific C<string:> and C<sysString:>. If unspecified, C<xmlRegister> assumes C<SysString:Lane/Register/UserInterface/XML>.
+
+=back
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program has not been heavily tested.
+
+=item *
+
+The L'E<acirc>ne "URLs" are not true URLs: The entire string, with the protocol prefix removed is passed verbatim to L<String> or L<SysString>.
+
+=item *
+
+As it uses L<renderXmlRegister-Tk>, all of that program's bugs appear here.
+
+=back
+
+=head1 SEE ALSO
+
+L<Register>, L<renderXmlRegister-Tk>, L<LWP>
+
+The L'E<acirc>ne Website L<http://l-ane.net/>
+    
+=head1 NOTES
+
+Currently, C<xmlRegister> is a wrapper around existing L'E<acirc>ne tools to emulate the functionality of the newer XML Register (L<http://tasks.l-ane.net/show_bug.cgi?id=19>). This tool renders and executes the rendered register file directly. Internally, it uses renderXmlRegister-kit and temporary files, but the user experience is the same. Unlike the newer setup, C<xmlRegister> uses two Perl processes (the wrapper itself and the temporarily generated register script).
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+    
+package LanePOS::UrlHelper;
+
+$::VERSION = (q$Revision: 1171 $ =~ /(\d+)/)[0];
+
+sub getStore
+{
+    my ($url, $file) = @_;
+    #check for a filename first
+    if(-r $url)
+    {
+	print STDERR "LanePOS::UrlHelper:getStore($_[0], $_[1]): url appears to be a file\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /UrlHelper/;
+	use File::Copy ();
+	File::Copy::copy("$url", "$file");
+	return 1 if -r $file and ! -z $file;
+	return 0;
+    }
+
+    my ($prot, $loc);
+    if(($prot, $loc) = ($url =~ /^(sysstring|string):(.*)$/i))
+    {
+	print STDERR "LanePOS::UrlHelper:getStore($_[0], $_[1]): matched L'ane style\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /UrlHelper/;
+	my $s;
+	if($prot =~ /sysstring/i)
+	{
+	    use LanePOS::SysString;
+	    $s = SysString->new;
+	    return 0 if !$s->open($loc);
+	}
+	else
+	{
+	    use LanePOS::String;
+	    $s = String->new;
+	    return 0 if !$s->open($loc);
+	}
+	open Output, '>', $file;
+	print Output $s->{'data'};
+	return 1;
+    }
+    else
+    {
+	eval {
+	    print STDERR "LanePOS::UrlHelper:getStore($_[0], $_[1]): didn't match L'ane style\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /UrlHelper/;
+	    
+	    use LWP::Simple ();
+	    #return 1 if LWP::Simple::is_success(LWP::Simple::getstore($url, $file));
+	    my $rc = LWP::Simple::mirror($url, $file);
+	    print STDERR "LanePOS::UrlHelper:getStore($_[0], $_[1]): the result code is $rc\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /UrlHelper/;
+	    return 1 if LWP::Simple::is_success($rc);
+	    return 0;
+	};
+    }
+}
+
+package main;
+
+my ($kit, $url);
+if($#ARGV == 1)
+{
+    $url = $ARGV[1];
+}
+elsif($#ARGV == 0)
+{
+    $url = 'SysString:Lane/Register/UserInterface/XML';
+}
+else
+{
+    print STDERR "$0: usage: $0 kit url\n";
+    exit 0;
+}
+$kit = $ARGV[0];
+
+if($kit !~ /^Tk$/) #don't even try to continue if they specify a bad kit
+{
+    print STDERR "$0: $kit is not a valid kit.\nusage: $0 kit url\n";
+    exit 0;
+}
+
+#get the filename in which to save the xml
+use File::Spec;
+use File::Temp;
+my $xml = new File::Temp(
+			 TEMPLATE => 'xmlRegister-XXXXXX',
+			 #TMPDIR => 1,
+			 DIR => File::Spec->tmpdir(),
+			 #DIR => $FindBin::Bin
+			 UNLINK => 0,
+			 SUFFIX => '.xml',
+			 );
+print STDERR "xmlRegister: xml=$xml\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlRegister/;
+LanePOS::UrlHelper::getStore($url, $xml) or die "couldn't open the requested URL $url";
+
+#check the kit
+my $renderer = File::Spec->catfile($ENV{'LaneRoot'}, 'register', 'xmlRegister', "renderXmlRegister-$kit");
+-r $renderer or die "couldn't open the renderer for $kit";
+
+my $regout = $xml;
+$regout =~ s/\.xml$/\.pl/i;
+print STDERR "xmlRegister: regout=$regout\n" if exists $ENV{'LaneDebug'} and $ENV{'LaneDebug'} =~ /xmlRegister/;
+system($renderer, $xml, $regout) == 0 or die "the renderer failed";
+#return system($^X, $regout) == 0;
+system($^X, '-w', $regout) == 0 or die "the exec($^X, '-w', $regout) failed";
+unlink($xml, $regout) or die "couldn't unlink the files";

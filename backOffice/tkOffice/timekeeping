@@ -1,0 +1,303 @@
+#!/usr/bin/perl -w
+
+#LanePOS/backOffice/tkOffice/timekeeping
+#This file is part of L'ane. See COPYING for licensing information.
+#Copyright 2008 Jason Burrell
+
+#$Id: timekeeping 1193 2010-10-22 21:10:11Z jason $
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+require 5.008;
+use strict;
+
+use LanePOS::Timeclock;
+my $tc = Timeclock->new;
+use LanePOS::Locale;
+my $lc = Locale->new;
+
+#use Data::Dumper;
+
+my $date;
+my $d;
+my $newD;
+
+# Sample SpecTcl main program for testing GUI
+use Tk;
+use Tk::Dialog;
+use Tk::Table;
+
+my($top) = MainWindow->new();
+$top->title("L'ane: " . $lc->get('Lane/BackOffice/Timekeeping'));
+my $table = ui($top);
+
+#don't initially build the table as the user needs to tell us for when to build it
+##currently, pass the date on the cmd line
+#loadAndBuild($table, $date);
+
+Tk::MainLoop;
+
+
+#############################################################
+# general use subs
+#############################################################
+sub loadAndBuild
+{
+    my ($root, $date) = @_;
+
+    my $tblOld = ($root->children)[0];
+
+    my $table = $root->Table(
+        #-scrollbars => 'oe',
+        -scrollbars => 'osoe',
+        #-fixedrows => '1',
+        #-rows => '4',
+        #-columns => '5',
+        -takefocus => '0'
+        );
+    $table->pack;
+
+    #reset the var
+    $newD = [];
+
+    my @bounds = $tc->getBoundsForDate($date);
+    my @clerks = $tc->getAllClerksInSpanOrderedByClockedIn(@bounds);
+    $d = \@clerks;
+    my ($c, $r) = (0, 0);
+    foreach my $clerk (@clerks)
+    {
+        $table->put($r, 0, $clerk->{'name'});
+        $c = 1;
+        $clerk->{'punches'} = [];
+        foreach my $punch ($tc->getAllPunchesInSpan($clerk->{'id'}, @bounds))
+        {
+            next if !$tc->open($clerk->{'id'}, $punch);
+            my $h = {
+                'clerk' => $clerk->{'id'},
+                'punch' => $punch,
+                'voidAt' => $tc->{'voidAt'},
+                'forced' => $tc->{'forced'},
+            };
+            push @{$clerk->{'punches'}}, $h;
+            my $cb = $table->Checkbutton(
+                -text => $lc->temporalFmt('shortTime', $punch),
+                -indicatoron => 0, -onvalue=> ($h->{'voidAt'} ? $h->{'voidAt'} : 'now'), -offvalue => '',
+                -variable => \$h->{'voidAt'},
+                -takefocus => 0,
+                );
+
+            $cb->configure(-activebackground => ($h->{'voidAt'} eq '' ? $cb->cget('-background') : '#b03060'));
+            $cb->configure(-command => sub {
+                #warn "running the callback\n";
+                #the following doesn't work
+                $cb->configure(-activebackground => ($h->{'voidAt'} eq '' ? $cb->cget('-background') : '#b03060'));
+                push @{$newD}, $h;
+                           });
+            $table->put($r, $c, $cb);
+            $c++;
+        }
+        #add the blank field here
+        buildEntry($table, $date, $c, $r, $clerk->{'id'});
+        $r++;
+    }
+    #destroy the old one, if it exists
+    $tblOld->destroy;
+}
+
+sub buildEntry
+{
+    my ($table, $date, $c, $r, $clerk) = @_;
+    
+    my $h = {
+        'clerk' => $clerk,
+        'punch' => '',
+        'voidAt' => '',
+        'forced' => 1,
+    };
+    my $blank = $table->Entry(-width => 8, -textvariable => \$h->{'punch'});
+    $table->put($r, $c, $blank);
+    $blank->configure(-validate => 'focusout', -vcmd =>
+                      sub
+                      {
+                          return 1 if $h->{'punch'} eq '';
+                          eval
+                          {
+                              $tc->{'dal'}->do('select ' . $tc->{'dal'}->qtAs($h->{'punch'}, 'time') . ';');
+                              $h->{'punch'} = $lc->temporalFmt('shortTime', $tc->getTimestampForBusinessDayAndTime($date, ($tc->{'dal'}->fetchrow)[0]));
+                          };
+                          $blank->configure(-validate => 'focusout');
+                          if($@)
+                          {
+                              $table->Dialog(
+                                  -title => $lc->get('Lane/BackOffice/Timekeeping/Invalid Time/Title'),
+                                  -text => $lc->get('Lane/BackOffice/Timekeeping/Invalid Time'),
+                                  -buttons => [$lc->get('Lane/BackOffice/Buttons/OK')],
+                                  -default_button => $lc->get('Lane/BackOffice/Buttons/OK'),
+                                  )->Show();
+                              return 0;
+                          }
+                          #the following would probably be more logically put into a <FocusOut> binding, but this seems to work better
+                          push @{$newD}, $h;
+                          my $cb = $table->Checkbutton(
+                              -text => $h->{'punch'},
+                              -indicatoron => 0, -onvalue=> ($h->{'voidAt'} ? $h->{'voidAt'} : 'now'), -offvalue => '',
+                              -variable => \$h->{'voidAt'},
+                              -takefocus => 0,
+                              );
+                          #adjust the punch value so it can be used in the db
+                          $h->{'punch'} = $tc->getTimestampForBusinessDayAndTime($date, $h->{'punch'});
+                          $cb->configure(-command => sub {
+                              #the following doesn't work
+                              $cb->configure(-activebackground => ($h->{'voidAt'} eq '' ? $cb->cget('-background') : '#b03060'));
+                              #this data is already in the newD array as it is from an entry
+                              #push @{$newD}, $h;
+                                         });
+                          #$blank->destroy; #Tk::Table will handle this
+                          
+                          #add the blank field here
+                          my $h2 = {
+                              'clerk' => $h->{'id'},
+                              'punch' => '',
+                              'voidAt' => '',
+                              'forced' => 1,
+                          };
+                          buildEntry($table, $date, $c + 1, $r, $clerk);
+
+                          my $old = $table->put($r, $c, $cb);
+                          return 1;
+                      },
+                      -invcmd => sub
+                      {
+                          $h->{'punch'} = 'now';
+                          $blank->focus;
+                          $blank->configure(-validate => 'focusout');
+                      },
+        );
+    return $blank;
+}
+
+sub ui
+{
+    my($root) = @_;
+    
+    my $frmTop = $root->Frame;
+    my $frmTable = $root->Frame;
+    my $frmButtons = $root->Frame;
+
+    my $bProcess = $frmButtons->Button(
+        -text => $lc->get('Lane/BackOffice/Buttons/Process'),
+        -command => sub
+        {
+            #warn "old: ", Dumper($d), "/old\n";
+            #warn "new: ", Dumper($newD), "/new\n";
+            processChanges();
+        }
+	);
+    my $bQuit = $frmButtons->Button (
+        -text => $lc->get('Lane/BackOffice/Buttons/Quit'),
+        -command => sub
+        {
+            if(1)#$isSaved)
+            {
+                exit;
+            }
+            else
+            {
+                #are you sure?
+                
+            }
+        }
+	);
+    my $entDate = $frmTop->Entry(-width => 12, -textvariable => \$date);
+    $entDate->pack;
+    $entDate->configure(-validate => 'focusout', -vcmd =>
+                      sub
+                      {
+                          validateDate($entDate);
+                      },
+                      -invcmd => sub
+                      {
+                          correctDate($entDate);
+                      },
+        );
+    $entDate->bind('<Return>',
+                   sub
+                   {
+                       #$entDate->focusPrev;
+                       validateDate($entDate) or correctDate($entDate);
+                       loadAndBuild($frmTable, $date);
+                   });
+
+    #geometry mgmt
+    $frmTop->grid(-column => 0, -row => 0);
+    $frmTable->grid(-column => 0, -row => 1);
+    $frmButtons->grid(-column => 0, -row => 2);
+    $bProcess->grid(-column => 0, -row => 0);
+    $bQuit->grid(-column => 1, -row => 0);
+    return $frmTable;
+}
+
+sub processChanges
+{
+    foreach my $p (@{$newD})
+    {
+        #if the item is forced, try to insert it now (it may have been an old forced)
+        if($p->{'forced'})
+        {
+            $tc->forcePunch($p->{'clerk'}, $p->{'punch'});
+        }
+
+        if($p->{'voidAt'})
+        {
+            $tc->voidPunch($p->{'clerk'}, $p->{'punch'});
+        }
+        else
+        {
+            #this is an extra operation if we didn't change it
+            $tc->unvoidPunch($p->{'clerk'}, $p->{'punch'});
+        }
+    }
+    #now we need to clear the table -- until the interface is corrected, just reload the passed in date
+    loadAndBuild($table, $date);
+}
+
+sub correctDate
+{
+    my ($ent) = @_;
+    my $date = $ent->cget('-textvariable');
+    ${$date} = 'today';
+    $ent->focus;
+    $ent->configure(-validate => 'focusout');
+    return 1;
+}
+
+sub validateDate
+{
+    my ($ent) = @_;
+    my $date = $ent->cget('-textvariable');
+    eval
+    {
+        $tc->{'dal'}->do('select ' . $tc->{'dal'}->qtAs(${$date}, 'date'));
+        ${$date} = $lc->temporalFmt('shortDate', ($tc->{'dal'}->fetchrow)[0]);
+    };
+    if($@)
+    {
+        $ent->configure(-validate => 'none');
+        $table->Dialog(
+            -title => $lc->get('Lane/BackOffice/Timekeeping/Invalid Time/Title'),
+            -text => $lc->get('Lane/BackOffice/Timekeeping/Invalid Time'),
+            -buttons => [$lc->get('Lane/BackOffice/Buttons/OK')],
+            -default_button => $lc->get('Lane/BackOffice/Buttons/OK'),
+            )->Show();
+        return 0;
+    }
+    $ent->configure(-validate => 'focusout');
+    return 1;
+}
+
+1;

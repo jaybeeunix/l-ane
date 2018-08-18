@@ -1,0 +1,22 @@
+#!/usr/bin/perl -w
+
+#duplicate
+#Copyright 2008 Jason Burrell.
+#This file is part of L'ane. See COPYING for licensing information.
+
+if($#ARGV != 1)
+{
+    die "$0: usage: inputfile-basename outputfile-basename";
+}
+
+if(-r $ARGV[0] and -s $ARGV[0])
+{
+    my ($old, $new) = @ARGV;
+    system('cp', '-v', $old, $new);
+    $old =~ s/\.cmd$/\.pl/; 
+    $new =~ s/\.cmd$/\.pl/;
+    system('cp', '-v', $old, $new);
+    $old =~ s/\.pl$//; 
+    $new =~ s/\.pl$//;    
+    system('perl', '-wpi', '-e', "s/$old/$new/g;", "$new.cmd", "$new.pl");
+}

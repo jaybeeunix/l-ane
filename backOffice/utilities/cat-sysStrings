@@ -1,0 +1,70 @@
+#!/usr/bin/perl
+
+#cat-sysStrings Copyright 2004 Jason Burrell
+#$Id: cat-sysStrings 1132 2010-09-19 21:36:50Z jason $
+
+#This program prints a sysString to stdout
+=pod
+
+=head1 NAME
+
+backOffice/utilities/cat-sysStrings - Write a L'E<acirc>ne SysString to STDOUT.
+
+=head1 SYNOPSIS
+
+cat-sysStrings sysString-id
+
+=head1 DESCRIPTION
+
+C<cat-sysStrings> allows one to use standard text file processing tools on L'E<acirc>ne SysStrings by writing the specified sysString to STDOUT. It is often used to inspect the value of a sysString or to move a single sysString between datasets.
+
+=head1 ARGUMENTS
+
+=over
+
+=item sysString-id
+
+The ID of the sysString to write out to STDOUT.
+
+=back
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program contains no known bugs.
+
+=back
+
+=head1 SEE ALSO
+
+L<LanePOS::SysString>, L<update-sysStrings>
+
+The L'E<acirc>ne Website L<http://l-ane.net/>
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+use LanePOS::SysString;
+
+if($#ARGV != 0)
+{
+    print STDERR "$0: usage: $0 sysString-id\n";
+    exit;
+}
+
+$str = SysString->new;
+print $str->{'data'} if $str->open($ARGV[0]);
+#print STDERR $str->{'id'}, " update successful\n" if $str->save;

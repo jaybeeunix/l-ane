@@ -1,0 +1,174 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+
+<head>
+<title>L&#x2019;&#xe2;ne XML Reporter Test: Constant if Tests</title>
+</head>
+
+<body>
+<h1>One-level Conditionals</h1>
+
+<h2>String</h2>
+<h3>Equality</h3>
+<p>Should be true: [<rpt:if subject='Constant.123abc' verb='eq' object='Constant.123abc'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123abc' verb='eq' object='Constant.abc123'>true</rpt:if>]</p>
+
+<h3>Exclusively Less</h3>
+<p>Should be true: [<rpt:if subject='Constant.abc' verb='lt' object='Constant.b'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.b' verb='lt' object='Constant.abc'>true</rpt:if>]</p>
+
+<h3>Exclusively Greater</h3>
+<p>Should be true: [<rpt:if subject='Constant.bcd' verb='gt' object='Constant.a'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.a' verb='gt' object='Constant.bcd'>true</rpt:if>]</p>
+
+<h3>Inclusively Less</h3>
+<p>Should be true: [<rpt:if subject='Constant.abc' verb='le' object='Constant.abc'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.abc' verb='le' object='Constant.ab'>true</rpt:if>]</p>
+
+<h3>Inclusively Greater</h3>
+<p>Should be true: [<rpt:if subject='Constant.abcd' verb='ge' object='Constant.abc'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.abc' verb='ge' object='Constant.abcd'>true</rpt:if>]</p>
+
+<h3>Inequality</h3>
+<p>Should be true: [<rpt:if subject='Constant.123abc' verb='ne' object='Constant.abc123'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123abc' verb='ne' object='Constant.123abc'>true</rpt:if>]</p>
+
+<h3>Regex Pattern Match</h3>
+<p>Should be true: [<rpt:if subject='Constant.123abc' verb='match' object='Constant.123'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123abc' verb='match' object='Constant.^123$'>true</rpt:if>]</p>
+
+<h2>Numeric</h2>
+<h3>Equality</h3>
+<p>Should be true: [<rpt:if subject='Constant.123' verb='==' object='Constant.0123'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123' verb='==' object='Constant.1234'>true</rpt:if>]</p>
+
+<h3>Exclusively Less</h3>
+<p>Should be true: [<rpt:if subject='Constant.1' verb='&lt;' object='Constant.2'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.4' verb='&lt;' object='Constant.3'>true</rpt:if>]</p>
+
+<h3>Exclusively Greater</h3>
+<p>Should be true: [<rpt:if subject='Constant.123' verb='&gt;' object='Constant.12'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123' verb='&gt;' object='Constant.456'>true</rpt:if>]</p>
+
+<h3>Inclusively Less</h3>
+<p>Should be true: [<rpt:if subject='Constant.123' verb='&lt;=' object='Constant.1234'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.1234' verb='&lt;=' object='Constant.123'>true</rpt:if>]</p>
+
+<h3>Inclusively Greater</h3>
+<p>Should be true: [<rpt:if subject='Constant.123' verb='&gt;=' object='Constant.12'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.12' verb='&gt;=' object='Constant.123'>true</rpt:if>]</p>
+
+<h3>Inequality</h3>
+<p>Should be true: [<rpt:if subject='Constant.123' verb='!=' object='Constant.1234'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.123' verb='!=' object='Constant.123'>true</rpt:if>]</p>
+
+<h2>Boolean</h2>
+<h3>Undef</h3>
+<p>Should be true: [<rpt:if subject='Reporter.blahhh' verb='isfalse'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Reporter.blahhh' verb='istrue'>true</rpt:if>]</p>
+
+<h3>String</h3>
+<p>Should be true: [<rpt:if subject='Constant.Hey' verb='istrue'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.Hey' verb='isfalse'>false</rpt:if>]</p>
+
+<h3>True Number</h3>
+<p>Should be true: [<rpt:if subject='Constant.1' verb='istrue'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.1' verb='isfalse'>false</rpt:if>]</p>
+
+<h3>False Number</h3>
+<p>Should be true: [<rpt:if subject='Constant.0' verb='isfalse'>true</rpt:if>]</p>
+<p>Should be false (no output): [<rpt:if subject='Constant.0' verb='istrue'>false</rpt:if>]</p>
+
+<h1>Nested Conditionals</h1>
+<h2>Two Conditionals</h2>
+
+<h3>True-False</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>true
+   <rpt:if subject='Constant.123' verb='==' object='Constant.1234'>FALSE
+   </rpt:if>
+</rpt:if>
+</p>
+
+<h3>False-True</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.1234'>FALSE
+   <rpt:if subject='Constant.123' verb='==' object='Constant.123'>true, but shouldn't get this far, so FALSE
+   </rpt:if>
+</rpt:if>
+</p>
+
+<h3>True-True</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>true
+   <rpt:if subject='Constant.123' verb='!=' object='Constant.1234'>true
+   </rpt:if>
+</rpt:if>
+</p>
+
+<h3>False-False</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.1234'>FALSE
+   <rpt:if subject='Constant.123' verb='!=' object='Constant.123'>FALSE
+   </rpt:if>
+</rpt:if>
+</p>
+
+<h2>Three Conditionals</h2>
+
+<h3>True-True-True</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>
+true
+<rpt:if subject='Constant.123' verb='==' object='Constant.123'>true
+<rpt:if subject='Constant.123' verb='==' object='Constant.123'>true</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>True-True-False</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>
+true
+<rpt:if subject='Constant.123' verb='==' object='Constant.123'>true
+<rpt:if subject='Constant.123' verb='!=' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>True-False-True</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>
+true
+<rpt:if subject='Constant.123' verb='!=' object='Constant.123'>FALSE
+<rpt:if subject='Constant.1234' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>True-False-False</h3>
+<p><rpt:if subject='Constant.123' verb='==' object='Constant.123'>
+true
+<rpt:if subject='Constant.456' verb='==' object='Constant.789'>FALSE
+<rpt:if subject='Constant.789' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>False-True-True</h3>
+<p><rpt:if subject='Constant.123' verb='!=' object='Constant.123'>
+FALSE
+<rpt:if subject='Constant.456' verb='==' object='Constant.789'>FALSE
+<rpt:if subject='Constant.789' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>False-True-False</h3>
+<p><rpt:if subject='Constant.123' verb='!=' object='Constant.123'>
+FALSE
+<rpt:if subject='Constant.456' verb='==' object='Constant.789'>FALSE
+<rpt:if subject='Constant.789' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>False-False-True</h3>
+<p><rpt:if subject='Constant.123' verb='!=' object='Constant.123'>
+FALSE
+<rpt:if subject='Constant.456' verb='==' object='Constant.789'>FALSE
+<rpt:if subject='Constant.789' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+<h3>False-False-False</h3>
+<p><rpt:if subject='Constant.123' verb='!=' object='Constant.123'>
+FALSE
+<rpt:if subject='Constant.456' verb='==' object='Constant.789'>FALSE
+<rpt:if subject='Constant.789' verb='==' object='Constant.123'>FALSE</rpt:if></rpt:if></rpt:if>
+</p>
+
+</body>
+</html>

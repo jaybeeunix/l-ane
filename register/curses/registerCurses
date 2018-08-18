@@ -1,0 +1,514 @@
+#!/usr/bin/perl
+
+#registerCurses, the curses register frontend of LanePOS
+#Copyright 2001-2010 Jason Burrell
+#Copyright 2000 Burrell Business Systems
+#See LaneRoot/README
+
+################################################################
+#jason@BurrellBizSys.com - Started 2000 Sept 02 (this file)
+#$Id: registerCurses 1207 2011-04-06 00:44:39Z jason $
+################################################################
+
+=pod
+
+=head1 NAME
+
+register/curses/registerCurses - a curses interface to L'E<acirc>ne's
+Register class.
+
+=head1 SYNOPSIS
+
+registerCurses 2E<gt> /tmp/errorMessages
+
+=head1 DESCRIPTION
+
+C<registerCurses> is a L<curses|curses> (text terminal) front-end to
+L'E<acirc>ne's Register class. Curses is the standard text terminal screen
+management library for Unix systems. As this front-end uses the system curses
+library, use of terminfo over termcap and support for color are dependent on
+your operating system's curses library.
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+It needs to be updated to support keymapping.
+
+=item *
+
+It would be nice if we had a driver that supported a terminal's pass-through
+printer port.
+
+=back
+
+=head1 SEE ALSO
+
+L<LanePOS::Register>, L<curses>
+
+The L'E<acirc>ne Website http://l-ane.net/
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+#%win holds all of the windows
+%win = (
+	'info' => undef,
+	'entryBox' => undef,
+	'entry' => undef,
+	'summary' => undef,
+	'receipt' => undef,
+	'bar' => undef,
+	);
+
+#basic objects, LanePOS
+use LanePOS::Register;
+
+$reg = Register->new;
+$0 = "LanePOS::registerCurses v" . $reg->{'version'}; # modifies the "ps" info
+&copyright;
+use Curses;
+$reg->preregisterEvent('Lane/CORE/Initialize/User Interface', \&initDisplay);
+$reg->triggerEvent('Lane/CORE/Initialize/User Interface');
+initEvents($reg);
+
+refresh($win{'info'});
+refresh($win{'entryBox'});
+refresh($win{'entry'});
+refresh($win{'summary'});
+refresh($win{'receipt'});
+refresh($win{'bar'});
+
+#the remainder of the "main" code is at the end of this file
+#here we go...
+#this L::Reg stuff has to come after at least some of the display stuff is declared
+
+###################################################
+# Subroutines
+###################################################
+
+sub initIdleTasks {		# builds the array of idle tasks, the pseudo-blocking
+                                # input loop calls idleUpdate periodically which calls
+				# these subs
+
+    @idleTasks = (		# must include at least one task
+				sub {
+				    ;
+				    #&writeStatusBar; moved for events
+				    #refresh($win{'bar'});
+				},
+    );
+
+return 1;
+}
+
+sub idleUpdate {		# calls all of the tasks in @idleTasks
+    my $i;
+    foreach $i (@idleTasks)
+    {
+	&$i;
+    }
+    return 1;
+}
+
+sub copyright {			# displays the copyright msg, pre-curses
+    print "LanePOS v", $reg->{'version'}, "
+Copyright 2003-2010 Jason Burrell.
+Copyright 2000-2002 Burrell Business Systems.
+
+LanePOS comes with ABSOLUTELY NO WARRANTY; for details see the file
+COPYING. This is free software, and you are welcome to redistribute
+it under certain conditions; see the file COPYING for details.
+
+http://l-ane.net/
+http://ryotous.com/
+
+Using: $ENV{'LaneDSN'}
+";
+    sleep 2;
+    return 1;
+}
+
+sub initEvents {
+    my ($reg) = @_;
+
+    #remove the empty events from these things
+    foreach my $e
+	(
+	 'Lane/Register/UserInterface/Update Status Bar',
+	 'Lane/Register/UserInterface/Update Summary Area',
+	 'Lane/Register/UserInterface/Clear Summary Area',
+	 'Lane/Register/UserInterface/Beep',
+	 'Lane/Register/UserInterface/Clear Entry',
+	 'Lane/Register/UserInterface/Print Info',
+	 'Lane/Register/UserInterface/Get Responses',
+	 'Lane/Register/UserInterface/Print Receipt',
+	 'Lane/Register/UserInterface/Clear Receipt',
+	 'Lane/Register/UserInterface/Map Key',
+	 'Lane/Register/UserInterface/Exit',
+	)
+    {
+	pop @{$reg->{'events'}->{$e}};
+    }
+
+    $reg->registerEvent('Lane/Register/UserInterface/Print Info', \&main::infoPrint);
+    $reg->registerEvent('Lane/Register/UserInterface/Get Responses', \&main::getResponses);
+    $reg->registerEvent('Lane/Register/UserInterface/Exit', \&main::byeBye);
+
+    $reg->registerEvent('Lane/Register/UserInterface/Update Status Bar', \&main::writeStatusBar);
+    $reg->registerEvent('Lane/Register/UserInterface/Update Summary Area', \&main::writeSummaryArea);
+    $reg->registerEvent('Lane/Register/UserInterface/Clear Summary Area', \&main::clearSummary);
+    $reg->registerEvent('Lane/Register/UserInterface/Beep', \&main::beep);
+    $reg->registerEvent('Lane/Register/UserInterface/Clear Entry', \&main::clearEntry);
+    $reg->registerEvent('Lane/Register/UserInterface/Print Receipt', \&main::receiptPrint);
+    $reg->registerEvent('Lane/Register/UserInterface/Clear Receipt', \&main::clearReceipt);
+    $reg->registerEvent('Lane/Register/UserInterface/Map Key', sub
+			{
+			    #not yet supported
+			});
+}
+
+sub initDisplay {		# initialize the curses related things
+    &initscr;
+    &start_color;
+    my ($x, $y);
+    getmaxyx($y,$x);		# must be at least 80x24
+
+    use integer;
+
+    #the sub windows
+    $win{'info'} = subwin($stdscr, 4, $x, 0, 0);
+    $win{'entryBox'} = subwin($stdscr, 3, $x, 4, 0);
+    $win{'entry'} = subwin($stdscr, 1, $x - 4, 5, 2);
+    $win{'summary'} = subwin($stdscr, $y - 8, $x - 40, 7, 40);
+    $win{'receipt'} = subwin($stdscr, $y - 8, 40, 7, 0);
+    $win{'bar'} = subwin($stdscr, 1, $x, $y - 1, 0);
+    #the color pairs
+    if(&has_colors)
+    {
+	init_pair(1, COLOR_BLACK, COLOR_GREEN); # for bar
+	init_pair(2, COLOR_WHITE, COLOR_BLUE); # for info and SUMMARY
+	init_pair(3, COLOR_BLACK, COLOR_WHITE); # for RECEIPT area
+	init_pair(4, COLOR_BLACK, COLOR_CYAN); # for entry area
+	#assign the colors to the windows
+	bkgdset($win{'bar'}, COLOR_PAIR(1));
+	bkgdset($win{'entryBox'}, COLOR_PAIR(4));
+	bkgdset($win{'entry'}, COLOR_PAIR(4));
+	bkgdset($win{'info'}, COLOR_PAIR(2));
+	bkgdset($win{'summary'}, COLOR_PAIR(2));
+	bkgdset($win{'receipt'}, COLOR_PAIR(3));
+    }
+    else
+    {
+	bkgdset($win{'bar'}, A_STANDOUT);
+	#bkgdset($win{'entryBox'}, COLOR_PAIR(4));
+	#bkgdset($win{'entry'}, COLOR_PAIR(4));
+	#bkgdset($win{'info'}, COLOR_PAIR(2));
+	#bkgdset($win{'summary'}, COLOR_PAIR(2));
+	#bkgdset($win{'receipt'}, A_STANDOUT);
+    }
+    #draw the boxes/inital data
+    erase($win{'entryBox'});
+    erase($win{'entry'});
+    box($win{'entryBox'}, 0, 0);
+    erase($win{'info'});
+    erase($win{'summary'});
+    erase($win{'receipt'});
+    erase($win{'bar'});
+    #set scrollok for the scrollable windows
+    scrollok($win{'receipt'}, 1);
+    move($win{'receipt'}, 4, 0); # position the cursor at the bottom of the window
+    #turn echo off, raw mode on
+    &noecho;
+    &keypad($win{'entry'}, 1);
+    &raw;			# doesn't seem to do anything???
+
+    refresh($win{'bar'});
+    refresh($win{'entryBox'});
+    refresh($win{'entry'});
+    refresh($win{'info'});
+    refresh($win{'summary'});
+    refresh($win{'receipt'});
+    return 1;
+}
+
+sub writeStatusBar {		# writes info in the status bar (called by idleUpdate)
+
+    addstr($win{'bar'}, 0, 0, sprintf(" " . $reg->{'lc'}->get("Clerk") . ": %-20.20s", $reg->{'clerk'}->{'name'}));
+    #addstr($win{'bar'}, 0, 27, sprintf("%52.52s ", $reg->{'lc'}->nowFmt('longTimestamp')));
+    addstr($win{'bar'}, 0, $COLS - 53, sprintf('%52.52s', $reg->lc->nowFmt('longTimestamp')));
+    refresh($win{'bar'});
+    return 1;
+}
+
+sub writeSummaryArea {		# writes info in the summary area
+			        # param $subtotal, $taxesTotal, $reg->{'sale'}->{'due'}
+    erase($win{'summary'});
+    #totals summary
+    addstr($win{'summary'}, 1, 1, sprintf("%16.16s: %12.12s", $reg->{'lc'}->get('Subtotal'), $reg->{'lc'}->moneyFmt($reg->{'sale'}->{'subt'})));
+    addstr($win{'summary'}, 2, 1, sprintf("%16.16s: %12.12s", $reg->{'lc'}->get('Taxes'), $reg->{'lc'}->moneyFmt($reg->{'sale'}->{'allTaxes'})));
+    addstr($win{'summary'}, 3, 1, sprintf("%16.16s: %12.12s", $reg->{'lc'}->get('Total'), $reg->{'lc'}->moneyFmt($reg->{'sale'}->{'total'})));
+    addstr($win{'summary'}, 4, 1, sprintf("%16.16s: %12.12s", $reg->{'lc'}->get('Amount Due'), $reg->{'lc'}->moneyFmt($reg->{'sale'}->{'due'})));
+    addstr($win{'summary'}, 5, 1, sprintf("%16.16s: %12.12s", $reg->{'lc'}->get('Due w/Disc'), $reg->{'lc'}->moneyFmt($reg->{'sale'}->{'due'} - $reg->{'term'}->applyDisc($reg->{'sale'}->{'total'})))) if $reg->{'term'}->{'discDays'} > 0 and !$reg->{'ra-tranz'};
+    
+    #customerName/terms
+    if($reg->{'cust'}->{'id'})
+    {
+#	addstr($win{'summary'}, 6, 2, "Customer:");
+	addstr($win{'summary'}, 7, 4, sprintf("%-33.33s", $reg->{'cust'}->{'id'}));
+	addstr($win{'summary'}, 8, 4, sprintf("%-33.33s", $reg->{'cust'}->getName()));
+	addstr($win{'summary'}, 9, 4, sprintf("%-33.33s", $reg->{'cust'}->{'billAddr1'}));
+	addstr($win{'summary'}, 10, 4, sprintf("%-33.33s", $reg->{'cust'}->{'billAddr2'}));
+	addstr($win{'summary'}, 11, 4, sprintf("%-33.33s", $reg->{'cust'}->{'billCity'} . ", " . $reg->{'cust'}->{'billSt'} . " " . $reg->{'cust'}->{'billZip'}));
+	#addstr($win{'summary'}, 12, 4, sprintf("%-33.33s", $reg->{'cust'}->{'billPhone'}));
+	if(!$reg->{'ra-tranz'})
+	{
+	    addstr($win{'summary'}, 13, 1, sprintf('%15.15s: %-20.20s', $reg->lc->get('Lane/BackOffice/Terms'), $reg->term->descr));
+	    addstr($win{'summary'}, 14, 1, sprintf('%15.15s: %-20.20s', $reg->{'lc'}->get('Disc Date'), $reg->{'term'}->{'discFromNow'})) if $reg->{'term'}->{'discDays'} > 0;
+	    addstr($win{'summary'}, 15, 1, sprintf('%15.15s: %-20.20s', $reg->{'lc'}->get('Due Date'), $reg->{'term'}->{'dueFromNow'})) if $reg->{'term'}->{'discDays'} > 0;
+	}
+    }
+    refresh($win{'summary'});
+    return 1;
+}
+
+sub clearSummary
+{
+    erase($win{'summary'});
+    refresh($win{'summary'});
+    return 1;
+}
+
+sub clearReceipt
+{
+    erase($win{'receipt'});
+    refresh($win{'receipt'});
+    return 1;
+}
+
+sub clearEntry
+{
+    erase($win{'entry'});
+    refresh($win{'entry'});
+    return 1;
+}
+
+sub infoPrint {			# puts info (prompt string) into the info window
+    my ($msg) = @_;
+    return 1 if($msg eq '');
+    erase($win{'info'});
+    addstr($win{'info'}, 0, 0, $msg);
+    refresh($win{'info'});
+    return 1;
+}
+
+sub receiptPrint
+{
+    my ($msg) = @_;
+    addstr($win{'receipt'}, $msg);
+    refresh($win{'receipt'});
+    return 1;
+}
+
+sub getInput {			# gets input in a pseudo blocking form, while still calling
+                                # idleUpdate; use in place of Curses::getch()
+				# param the x location of the cursor (else it hops around)
+    my ($x) = @_;
+    my $c = ERR;
+    halfdelay(10);		# 1 second delay
+    while($c == ERR)
+    {
+	#try processing signals here
+	$reg->allowSignals;
+
+	$c = getch($win{'entry'});
+	&idleUpdate;
+	move($win{'entry'}, 0, $x);
+    }
+    return $c;
+}
+
+#pass a series of prompts to the clerk,
+#returns his or her answers in an array
+#in the order asked
+sub getResponses
+{
+    #the first thing is a "hidden" flag now
+    my $hidden = 1 if shift =~ /hide/i;
+    my @q = @_;
+    my @r;
+    my $c;
+
+    #this input loop only understands clear(f5), bksp, and printable chars, the slash functions are put in place in the responses
+    for(my $i = 0; $i <= $#q; $i++)
+    {
+	infoPrint($q[$i]) if $q[$i] ne '';
+	refresh($win{'info'});
+	erase($win{'entry'});
+	move($win{'entry'}, 0, 0);
+	for(;;)
+	{
+	    $c = &getInput(length $r[$i]);
+	    if($c eq "\n")
+	    {
+		last unless $r[$i] eq "";
+	    }
+	    elsif($c == KEY_F(5)) # oops, clerk made a mistake
+	    {
+		$r[$i] = "";
+		erase($win{'entry'});
+		move($win{'entry'}, 0, 0);
+	    }
+	    elsif($c == KEY_BACKSPACE or $c == KEY_DC or $c eq "\cH")
+	    {
+		chop $r[$i];
+		erase($win{'entry'});
+		addstr($win{'entry'}, 0, 0, ($hidden ? '*' x length($r[$i]) : $r[$i]));
+	    }
+	    elsif(length($c) == 1)
+	    {
+		$r[$i] .= $c;
+	    }
+	    else
+	    {
+		&beep();
+	    }
+	    addstr($win{'entry'}, 0, 0, ($hidden ? '*' x length($r[$i]) : $r[$i]));
+	}
+    }
+    return @r;
+}
+
+sub mainInputLoop {
+    my ($entStr, $c, $cmd, $cmdStr, $qty, $amt);
+
+    refresh($win{'info'});
+    erase($win{'entry'});
+    move($win{'entry'}, 0, 0);
+    $entStr = $cmd = $cmdStr = $amt = "";
+    $qty = 1;
+    for(;;) # most of mainInputLoop is a big case-like if stmt
+    {
+	if($reg->{'globalReset'})
+	{
+	    $entStr = $cmd = $cmdStr = $amt = "";
+	    $reg->{'globalReset'} = 0;	# $reg->{'globalReset'} isn't really global, it's just for maininputloop
+	    $qty = 1;
+	    erase($win{'entry'});
+	    move($win{'entry'}, 0, 0);
+	}
+	$c = getInput(length $entStr);
+#	infoPrint('Enter a product ID, or press a function key');
+	infoPrint($reg->{'lc'}->get('Enter a product ID, or press a function key'));
+	refresh($win{'info'});
+	if($c == KEY_F(5))	# f5 is clear, was f2: ncurses5 change
+	{
+	    $entStr = $cmd = $cmdStr = $amt = "";
+	    $qty = 1;
+	    erase($win{'entry'});
+	    move($win{'entry'}, 0, 0);
+	}
+	elsif($c eq "\n")		# enter key means process the entry area
+	{
+	    #deterime if item or cmd
+	    if($cmd)		# handle the cmd
+	    {
+		my $numb = $cmdStr;
+		$numb =~ s/\D//g; # could cause some odd problems ie /func1tion23 will be 123
+		$cmdStr =~ s/\d//g;
+		&{$reg->{'slashFuncts'}{$cmdStr}}($numb, $entStr) if exists $reg->{'slashFuncts'}{$cmdStr}; # i hate putting $amt in here but the items need it
+	    }
+	    else		# not a cmd, assumes a plu
+	    {
+#		$amt /= 100;	# for register style (decimal-less, entry)
+		$reg->itemProcess($qty, $amt, $entStr);
+	    }
+	    $entStr = $cmdStr = $cmd = $amt = "";
+	    $qty = 1;
+	    erase($win{'entry'});
+	    move($win{'entry'}, 0, 0);
+	}
+	elsif($c eq "/")	# slash-command, stop showing
+	{
+	    $cmd = 1;		# the char/number input will supress the following $cs
+	}
+	elsif($c eq "*")	# direct multiplication
+	{
+	    next if $cmd;	# * doesn't apply in slash-cmd mode
+	    $qty = sprintf("%d", $entStr); # should I print this in the info area?
+	    $entStr = "";
+	    erase($win{'entry'});
+	    move($win{'entry'}, 0, 0);
+	}
+	elsif($c eq "@")	# the clerk is specifying the price
+	{
+	    next if $cmd;
+#	    $amt = sprintf("%.0f", $entStr); # should I print this in the info area?
+	    $amt = int($entStr); # should I print this in the info area?
+	    $entStr = "";
+	    erase($win{'entry'});
+	    move($win{'entry'}, 0, 0);
+	}
+	elsif($c == KEY_BACKSPACE or $c == KEY_DC or $c eq "\cH") # bksp, del, ^h, all do the same thing
+	{
+	    if($cmd)
+	    {
+		chop $cmdStr;
+	    }
+	    else
+	    {
+		chop $entStr;
+		erase($win{'entry'});
+		addstr($win{'entry'}, 0, 0, $entStr);
+	    }
+	}
+	elsif(length($c) == 1 and $c =~ /[\w \-]/)	#it's a char, number, _, " ", -
+	{
+	    if($cmd)
+	    {
+		$cmdStr .= $c;
+	    }
+	    else
+	    {
+		$entStr .= $c;
+		addstr($win{'entry'}, 0, 0, $entStr);
+		#why don't i need refresh here?
+	    }
+	}
+	else			# don't know what $c is
+	{
+	    &beep();
+	}
+    }
+}
+
+sub beep
+{
+    &Curses::beep();
+}
+
+sub byeBye {
+    &endwin;
+    exit 0;
+}
+
+#this is the big'un
+writeStatusBar();
+initIdleTasks();			# update clock, etc
+#$reg->clerkSignin;
+$reg->newTranz('first');
+
+mainInputLoop();
+byeBye();

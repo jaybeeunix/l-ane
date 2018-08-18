@@ -1,0 +1,24 @@
+LanePOS/dataset/README
+
+Copyright 2010 Jason Burrell.
+
+
+Installing a new dataset
+========================
+
+ 1. Create the database, "createdb yourdbname".
+ 2. Load the base roles, "psql yourdbname -f base-roles.sql"
+ 3. Load the base dataset, "psql yourdbname -f base-dataset.sql".
+ 4. Create LanePOS/config/site.pl, pointing it to your new dataset.
+
+
+Updating an old dataset
+=======================
+
+ 1. BACKUP YOUR OLD DATASET. THE UPDATE SCRIPT MIGHT DESTROY IT,
+    "pg_dump yourdbname > /tmp/yourdbname-backup.sql"
+ 1. Check your old dataset's version number, "./whats-my-dataset-version".
+ 2. Run the update script for your version. For example, for version 1,
+    "cd v1to2; ../../backOffice/utilities/lanesql -f update-dataset.sql; cd ..".
+ 3. Repeat step 2 for any additional update directories.
+ 4. Verify your dataset's new version number, "./whats-my-dataset-version".

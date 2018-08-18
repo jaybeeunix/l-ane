@@ -1,0 +1,139 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+<rpt:if subject='Constant.0' verb='==' object='Constant.1'><!-- This file is LanePOS/backOffice/xmlReporter/customer-statement.xml. It is part of L'ane, thus Copyright 2005 Jason Burrell. --></rpt:if>
+<rpt:promptset>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Customer Statement/Title' textDefault='Customer Statement' variable='title' type='fixed'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Customer Statement/Customer ID' textDefault='Customer ID' variable='customerid' type='text(20)'/>
+</rpt:promptset>
+<rpt:call object='Customer' method='open' argument0='UserInterface.customerid' /><rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'>
+<head>
+<title>L&#x2019;&#xe2;ne Customer Statement: <rpt:output value='Customer.id' /></title>
+<style>
+body
+{
+   font-family: Times, Serif;
+   font-size: 12pt;
+   background-color: white;
+   color: black;
+   margin-left: 5%;
+   margin-right: 5%;
+   width: 90%;
+}
+span.descr
+{
+/*   font-style: italic;*/
+   font-weight: bold;
+}
+table.body
+{
+   text-align: left;
+   width: 100%;
+}
+.forceLeft
+{
+   text-align: left;
+}
+</style>
+</head>
+
+<body>
+<!-- our name -->
+<table class='body'>
+<tr valign='top'><td width='50%'>
+<rpt:call object='SysString' method='open' argument0='Constant.company-customer-id' />
+<rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'>
+   <rpt:call object='Customer' method='open' argument0='SysString.data' />
+   <rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'>
+<span style='font-size: larger; font-weight: bold;'><rpt:output value='Customer.coName' /></span><br />
+<rpt:output value='Customer.billAddr1' /><br />
+<rpt:if subject='Customer.billAddr2' verb='ne' object='Constant.'><rpt:output value='Customer.billAddr2' /><br /></rpt:if>
+<rpt:output value='Customer.billCity' />, <rpt:output value='Customer.billSt' /> <rpt:output value='Customer.billZip' /><br />
+Phone: <rpt:output value='Customer.billPhone' />
+   </rpt:if>
+</rpt:if>
+</td>
+<td style='text-align: right;'>
+<!-- the statement info -->
+<span style='font-size: 400%; font-weight: normal; font-style: italic; text-transform: lowercase;'>Statement</span>
+</td>
+</tr>
+<tr>
+<td>
+<!-- customer info -->
+<rpt:call object='Customer' method='open' argument0='UserInterface.customerid' />
+<span class='descr'>Customer:</span><br />
+<blockquote>
+<rpt:call object='Customer' method='getName' />
+<rpt:output value='Customer.id' /><br />
+<rpt:output value='Reporter.lastCall' /><br />
+<rpt:output value='Customer.billAddr1' /><br />
+<rpt:if subject='Customer.billAddr2' verb='ne' object='Constant.'><rpt:output value='Customer.billAddr2' /><br /></rpt:if>
+<rpt:output value='Customer.billCity' />, <rpt:output value='Customer.billSt' /> <rpt:output value='Customer.billZip' /><br /><br />
+Phone: <rpt:output value='Customer.billPhone' />
+</blockquote>
+</td>
+<td>
+<!-- balance info -->
+<table class='body'><tbody><tr><td>
+<rpt:call object='Reporter' method='today' />
+<rpt:call object='Term' method='open' argument0='Customer.terms' /><rpt:call object='Reporter' method='today' /><rpt:call object='Term' method='datesBefore' argument0='Reporter.today' context='array' />
+
+<rpt:call object='Sale' method='getCustBalanceByRange' argument0='Customer.id' argument1='Reporter.1' argument2='Reporter.today' /><span class='descr'>Current Balance:</span></td> <td style='text-align: right;'><rpt:output value='Reporter.lastCall' format='money' /></td></tr>
+
+<tr><td><rpt:call object='Reporter' method='addDaysToDate' argument0='Constant.-30' argument1='Reporter.1' /><rpt:call object='Reporter' method='arrayify' argument0='Constant.2' /><rpt:call object='Reporter' method='addDaysToDate' argument0='Constant.-1' argument1='Reporter.1' /><rpt:call object='Reporter' method='arrayify' argument0='Constant.3' /><rpt:call object='Sale' method='getCustBalanceByRange' argument0='Customer.id' argument1='Reporter.2' argument2='Reporter.3' /><span class='descr'>Past Due 1 to 30 days:</span></td> <td style='text-align: right;'><span style='font-weight: bold; font-style: italic;'><rpt:output value='Reporter.lastCall' format='money' /></span></td></tr>
+
+<tr><td><rpt:call object='Reporter' method='addDaysToDate' argument0='Constant.-1' argument1='Reporter.2' /><rpt:call object='Reporter' method='arrayify' argument0='Constant.4' /><rpt:call object='Sale' method='getCustBalanceByRange' argument0='Customer.id' argument1='Constant.1975-01-01' argument2='Reporter.4' /><span class='descr'>Past Due 31 or more days:</span></td> <td style='text-align: right;'><span style='font-weight: bold; font-style: italic;'><rpt:output value='Reporter.lastCall' format='money' /></span></td></tr>
+
+<tr><td><rpt:call object='Sale' method='getCustBalanceByRange' argument0='Customer.id' argument1='Constant.1975-01-01' argument2='Constant.2037-12-31' /><span style='font-weight: bold;'><span class='descr'>Total Balance:</span></span></td> <td style='text-align: right; border-top-style: double;'><span style='font-weight: bold;'><rpt:output value='Reporter.lastCall' format='money' /></span></td></tr></tbody></table>
+
+</td>
+</tr>
+</table>
+
+<!-- the item info -->
+<table class='body' style='text-align: center;'><thead style='font-weight: bold;'><tr><td>#</td><td>Type</td><td>Date</td><td>Due Date</td><td>Discount Date</td><td>Due w/Discount</td><td>Transaction Total</td><td>Transaction Due</td></tr></thead><tbody>
+<!--
+we want to list the transactions from the oldest not paid or from the 15th
+of last month, which ever is older
+-->
+<rpt:call object='Reporter' method='makeDate' argument0='Reporter.today' argument1='Constant.0' argument3='Constant.=15' argument2='Constant.-1'/>
+<rpt:call object='Sale' method='getByCustAndOpenOrDate' argument0='Customer.id' argument1='Reporter.lastCall' context='array'/>
+
+<rpt:foreach set='Reporter.lastCall' element='t'>
+   <rpt:call object='Sale' method='open' argument0='t.value' />
+   <rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'>
+      <tr>
+         <td><rpt:output value='Sale.id' /></td>
+         <rpt:if subject='Sale.ratranz' verb='==' object='Constant.1'>
+            <td>Payment</td>
+            <td><rpt:output value='Sale.tranzDate' format='shortDate' /></td>
+            <td></td>
+            <td></td>
+            <td style='text-align: right;'></td>
+            <td style='text-align: right;'><rpt:call object='Reporter' method='product' argument0='Constant.-1' argument1='Sale.total' /><rpt:output value='Reporter.lastCall' format='money' /></td>
+         </rpt:if>
+         <rpt:if subject='Sale.ratranz' verb='!=' object='Constant.1'>
+            <td>Sale</td>
+            <td><rpt:output value='Sale.tranzDate' format='shortDate' /></td>
+            <rpt:call object='Term' method='open' argument0='Customer.terms' />
+            <rpt:call object='Term' method='datesFrom' argument0='Sale.tranzDate' context='array' />
+            <td><rpt:output value='Reporter.1' /></td>
+            <td>
+               <rpt:call object='Term' method='isDiscAble' argument0='Sale.tranzDate' argument1='Reporter.today' /><rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'><rpt:if subject='Term.discDays' verb='&gt;' object='Constant.0'><rpt:output value='Reporter.0' /></rpt:if></rpt:if>
+            </td>
+            <td style='text-align: right;'><rpt:call object='Term' method='isDiscAble' argument0='Sale.tranzDate' argument1='Reporter.today' /><rpt:if subject='Reporter.lastCall' verb='==' object='Constant.1'><rpt:if subject='Term.discDays' verb='&gt;' object='Constant.0'><rpt:call object='Term' method='applyDisc' argument0='Sale.total' /><rpt:call object='Reporter' method='product' argument0='Reporter.lastCall' argument1='Constant.-1' /><rpt:call object='Reporter' method='sum' argument0='Reporter.lastCall' argument1='Sale.balance' /><rpt:output value='Reporter.lastCall' format='money' /></rpt:if></rpt:if></td>
+            <td style='text-align: right;'><rpt:output value='Sale.total' format='money' /></td>
+         </rpt:if>
+         <td style='text-align: right;'><rpt:if subject='Sale.balance' verb='&gt;' object='Constant.0'><rpt:output value='Sale.balance' format='money'/></rpt:if></td>
+      </tr>
+   </rpt:if>
+</rpt:foreach>
+</tbody></table>
+
+<!-- end stuff -->
+<p style='font-weight: bold; font-style: italic; text-align: center;'>Thank you for allowing us to serve you!</p>
+<p style='font-weight: normal; font-size: smaller;'>Generated <rpt:output value='Reporter.today' format='shortDate'/></p>
+</body>
+</rpt:if>
+</html>

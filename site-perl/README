@@ -1,0 +1,7 @@
+This directory ($LaneRoot/site-perl/) is primarily designed for
+placing Perl modules that one does not want to install in the system
+Perl module "library".
+
+L'ane programs automatically include site-perl/lib/ (and various
+CPAN-created directories under it) in their @INC (Perl module path).
+

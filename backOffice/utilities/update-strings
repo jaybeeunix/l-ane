@@ -1,0 +1,75 @@
+#!/usr/bin/perl
+
+#update-strings Copyright 2001 Burrell Business Systems
+#$Id: update-strings 1132 2010-09-19 21:36:50Z jason $
+#initially created by jason@BurrellBizSys.com 2001-05-03
+
+#This program reads a reads data from stdin and updates the string given on the cmd line
+=pod
+
+=head1 NAME
+
+backOffice/utilities/update-strings - Write STDIN to a L'E<acirc>ne SysString.
+
+=head1 SYNOPSIS
+
+update-strings string-id
+
+=head1 DESCRIPTION
+
+C<update-strings> allows one to use standard text file processing tools on
+L'E<acirc>ne SysStrings by writing STDIN to the specified string. It is
+often used to replace value of a string or to move a single string
+between datasets.
+
+=head1 ARGUMENTS
+
+=over
+
+=item string-id
+
+The ID of the string to update.
+
+=back
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program contains no known bugs.
+
+=back
+
+=head1 SEE ALSO
+
+L<LanePOS::String>, L<cat-strings>
+
+The L'E<acirc>ne Website L<http://l-ane.net/>
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+use LanePOS::String;
+
+if($#ARGV != 0)
+{
+    print STDERR "$0: usage: $0 string-id\n";
+    exit;
+}
+
+$str = String->new;
+$str->{'id'} = $ARGV[0];
+$str->{'data'} .= $_ while(<STDIN>);
+print STDERR $str->{'id'}, " update successful\n" if $str->save;

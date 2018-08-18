@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+
+<head>
+<title>L’âne XML Reporter Test: Constant output Tests</title>
+</head>
+
+<body>
+<h1>Constant output Tests</h1>
+
+<h2>Simple Constants</h2>
+<p>Integer: 1245</p>
+<p>String: abcdef</p>
+<p>String with whitespace: words more words</p>
+<p>Decimal number: 12345.67</p>
+
+<h2>Fromatted Constants</h2>
+<h3>Money</h3>
+<p>No format (implied 'internal'): 1234567890</p>
+<p>Explicit 'internal': 1234567890</p>
+<p>Explicit 'money': $12,345,678.90</p>
+<h3>Timestamps</h3>
+<p>No format (implied 'internal'): 2004-09-24 14:01:32.485484-05</p>
+<p>Explicit 'internal': 2004-09-24 14:01:32.485484-05</p>
+<p>Explicit 'longTimestamp': Friday, September 24, 2004  2:01PM</p>
+<p>Explicit 'shortTimestamp': 09-24-2004  2:01PM</p>
+
+<h3>Dates</h3>
+<h4>ISO Input</h4>
+<p>Explicit 'longDate': Friday, September 24, 2004</p>
+<p>Explicit 'shortDate': 09-24-2004</p>
+<h4>US Input</h4>
+<p>Explicit 'longDate': Friday, September 24, 2004</p>
+<p>Explicit 'shortDate': 09-24-2004</p>
+<h4>Timestamp Input</h4>
+<p>Explicit 'longDate': Friday, September 24, 2004</p>
+<p>Explicit 'shortDate': 09-24-2004</p>
+
+</body>
+</html>

@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+
+<head>
+<title>L&#x2019;&#xe2;ne XML Reporter Test: Constant output Tests</title>
+</head>
+
+<body>
+<h1>Constant output Tests</h1>
+
+<h2>Simple Constants</h2>
+<p>Integer: <rpt:output value='Constant.1245'/></p>
+<p>String: <rpt:output value='Constant.abcdef'/></p>
+<p>String with whitespace: <rpt:output value='Constant.words more words'/></p>
+<p>Decimal number: <rpt:output value='Constant.12345.67'/></p>
+
+<h2>Fromatted Constants</h2>
+<h3>Money</h3>
+<p>No format (implied 'internal'): <rpt:output value='Constant.1234567890'/></p>
+<p>Explicit 'internal': <rpt:output value='Constant.1234567890' format='internal'/></p>
+<p>Explicit 'money': <rpt:output value='Constant.1234567890' format='money'/></p>
+<h3>Timestamps</h3>
+<p>No format (implied 'internal'): <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' /></p>
+<p>Explicit 'internal': <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' format='internal'/></p>
+<p>Explicit 'longTimestamp': <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' format='longTimestamp'/></p>
+<p>Explicit 'shortTimestamp': <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' format='shortTimestamp'/></p>
+
+<h3>Dates</h3>
+<h4>ISO Input</h4>
+<p>Explicit 'longDate': <rpt:output value='Constant.2004-09-24' format='longDate'/></p>
+<p>Explicit 'shortDate': <rpt:output value='Constant.2004-09-24' format='shortDate'/></p>
+<h4>US Input</h4>
+<p>Explicit 'longDate': <rpt:output value='Constant.09-24-2004' format='longDate'/></p>
+<p>Explicit 'shortDate': <rpt:output value='Constant.09-24-2004' format='shortDate'/></p>
+<h4>Timestamp Input</h4>
+<p>Explicit 'longDate': <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' format='longDate'/></p>
+<p>Explicit 'shortDate': <rpt:output value='Constant.2004-09-24 14:01:32.485484-05' format='shortDate'/></p>
+
+</body>
+</html>

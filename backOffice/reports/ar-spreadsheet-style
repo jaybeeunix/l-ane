@@ -1,0 +1,520 @@
+#!/usr/bin/perl
+
+#This generates the "spreadsheet-style" Accounts Receivables report
+
+#Based on information provided by kathy@BurrellBizSys.com
+#Created 2001-01-24 - jason
+#Copyright 2001-2010 Jason Burrell
+
+############################################################################
+# A Description of the Format
+############################################################################
+# Report Title
+#
+# Column Headers
+#
+# Information Rows
+############################################################################
+# The following are the columns:
+#   A - Date
+#   B - Customer Name
+#   C - Ticket #/Transaction ID
+#   D - blank
+#   E - Cash Sales (all paying tenders)
+#   F - Accts Recvable (all non-paying tenders)
+#   G - blank
+#   H - Inventory (not used--trade-ins)
+#   I - New Machines
+#   J - Used Machines
+#   K - Supplies
+#   L - Parts
+#   M - Labor
+#   N - Contracts
+#   O - Mileage
+#   P - Freight
+#   Q - Misc Income
+#   R - blank
+#   S - Exempt
+#   T - 6.25% Tax
+#   U - Resale
+#   V - blank
+#   W - Sale Discounts (a negative figure of the sale discounts)
+############################################################################
+
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+use integer;
+
+use LanePOS::Sale;
+use LanePOS::Product;
+use LanePOS::Discount;
+use LanePOS::Tax;
+use LanePOS::SysString;
+use LanePOS::Locale;
+$prod = Product->new;
+$dal = $prod->{'dal'};
+$disc = Discount->new($dal);
+$tax = Tax->new($dal);
+$sysStr = SysString->new($dal);
+$lc = Locale->new($dal);
+
+$printer = "report-line";
+#this is a hard coded setup for an Okidata ML-521 printer,
+#but since this report is BBS specific, I'm don't feel bad ;)
+$pStart = "\x1b\x0f"; #select 20 cpi
+$pEnd = "\x12"; #select 10 cpi
+
+$rOk = " ";
+$rBad = "<";
+
+#setup the report
+#*Report = *STDOUT;
+open Report, "|lpr -P$printer"; #this is the output report
+open Report, ">/tmp/ar.txt" if exists $ENV{'LaneDebug'}; #this is the output report
+$date = `date`;
+chop $date;
+
+if($sysStr->open('company-customer-id'))
+{
+    $usId = $sysStr->{'data'};
+}
+else
+{
+    $usId = 'UNKNOWN';
+}
+if($sysStr->open('company-name'))
+{
+    $coName = $sysStr->{'data'};
+}
+else
+{
+    $coName = '';
+}
+
+#prompt the user for the data range
+print "$coName Accounts Receivables Report\n\n";
+do
+{
+print "Enter the starting date for the report [MM-DD-YYYY]: ";
+$start = <>;
+chop $start;
+} until &validDate($start);
+do
+{
+print "Enter the ending date for the report [MM-DD-YYYY]: ";
+$end = <>;
+chop $end;
+} until &validDate($end);
+
+print "Please wait, this may take awhile...\n";
+
+#this allows the whole thing to be wrapped in a loop
+foreach my $i (5..18)
+{
+    $ttls[$i] = 0;
+}
+
+#begin the report
+print Report $pStart, "$coName\nAccounts Receivables ($start through $end)\n\nGenerated $date by $ENV{'USER'}\n\n";
+$reportTitlesFormat = "%-10.10s\t%-40.40s\t%-10.10s\t \t%-10.10s\t%-10.10s\t \t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t%-10.10s\t \t%-10.10s\t%-10.10s\t%-10.10s\t \t%-10.10s\n";
+$reportTitlesFormat =~ s/\t/  /g;
+printf Report $reportTitlesFormat, "Date", "Customer", "Ticket", "Cash Sales", "Accts Recv", "Inventory", "New Machine", "Used Machine", "Supplies", "Parts", "Labor", "Contracts", "Mileage", "Freight", "Misc", "Exempt", "IL Taxable", "Resale", "Discounts";
+
+#$dal->trace(STDERR);
+$dal->do("select
+    to_char(tranzDate, 'MM-DD-YYYY'),
+    getCustName(customers.id),
+    sales.id,
+    (
+        select sum(amt) from salesTenders, tenders where
+            ((salesTenders.tender = 0) or salesTenders.tender <> 0) and
+            salesTenders.tender = tenders.id and
+            tenders.pays = 'y' and
+            salesTenders.id = sales.id
+    ) as cash,
+    (
+        select sum(amt) from salesTenders, tenders where
+            ((salesTenders.tender = 0) or salesTenders.tender <> 0) and
+            salesTenders.tender = tenders.id and
+            tenders.pays = 'n' and
+            salesTenders.id = sales.id
+    ) as recv,
+    total,
+    customers.taxes
+
+from sales, customers
+
+where sales.customer=customers.id and
+    tranzDate::date >= '$start' and
+    tranzDate::date <= '$end' and
+    customer <> '$usId' and
+    suspended=false and
+    voidAt is null
+
+order by tranzdate, id");
+#the end time thing won't always catch them if they fall close to midnight (they may be tomorrow)
+#remember to fix the cash column (remove the change)
+ TICKET: for(my $x = 0; $x < $dal->{'tuples'}; $x++)
+{
+    @row = $dal->fetchrow;
+    $custTax = pop @row;
+    $total = pop @row;
+
+    #fix the change info
+    #remove the change
+    #change always comes from the cash
+#    $row[3] -= ($row[3] + $row[4] - $total) if $row[3] + $row[4] > $total;
+#no change anymore
+
+    #clear the total columns
+    foreach my $i (5..18)
+    {
+	$row[$i] = 0;
+    }
+
+    $taxable = 0;
+    $lost = 0;
+    
+    #this is to fix the "nothing" tickets on the report
+    $sale = Sale->new($dal);
+
+    if($sale->open($row[2]))
+    {
+	#that sale exists. now, open the items
+      ITEM: for(my $i = 0; $i <= $#{$sale->{'items'}}; $i++)
+      {
+	  $junkMe = 0; #allows us to throw away labor, contracts, inventory
+	  if($sale->{'items'}[$i]{'plu'} eq 'RA-TRANZ') #ra
+	  {
+	      #skip RAs in this report
+	      next TICKET;
+	  }
+	  elsif($sale->{'items'}[$i]{'plu'} =~ /^\#/) #comment
+	  {
+	      #skip comments
+	  }
+	  elsif($sale->{'items'}[$i]{'plu'} =~ /^:/) #discount
+	  {
+	      $obj = Discount->new($dal);
+	      if($obj->open(substr($sale->{'items'}[$i]{'plu'}, 1)))
+	      {
+		  #sale discounts have there own column
+		  if($obj->isSaleDisc)
+		  {
+		      $row[18] -= $sale->{'items'}[$i]{'amt'}; #this column is negative
+#		      $taxable -= $sale->{'items'}[$i]{'amt'};
+		  }
+		  #else a previous item discount, this is checked for and handled in products
+	      }
+	  }
+	  else #products
+	  {
+	      $obj = Product->new($dal);
+	      if($obj->open($sale->{'items'}[$i]{'plu'}))
+	      {
+		  #determine the category to stick it in
+		  if($obj->{'category'} eq 'nmach')
+		  {
+		      $row[6] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 6;
+		  }
+		  elsif($obj->{'category'} eq 'umach')
+		  {
+		      $row[7] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 7;
+		  }
+		  elsif($obj->{'category'} eq 'spply')
+		  {
+		      $row[8] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 8;
+		  }
+		  elsif($obj->{'category'} eq 'parts')
+		  {
+		      $row[9] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 9;
+		  }
+		  elsif($obj->{'category'} eq 'labor')
+		  {
+		      $row[10] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 10;
+		      $junkMe = 1;
+		  }
+		  elsif($obj->{'category'} eq 'ctrct')
+		  {
+		      $row[11] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 11;
+		      $junkMe = 1;
+		  }
+		  elsif($obj->{'category'} eq 'freig')
+		  {
+		      $row[13] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 13;
+		  }
+		  else
+		  {
+		      #this is misc and other items
+		      $row[14] += $sale->{'items'}[$i]{'amt'};
+		      $prev = 14;
+		  }
+		  if(!$junkMe)
+		  {
+		      if($obj->{'taxes'} & 2)
+		      {
+			  $taxable += $sale->{'items'}[$i]{'amt'};
+		      }
+		      else
+		      {
+#this isn't right, Exempt is for taxable, exempt items
+			  #the item is just exempt
+#			  $row[15] += $sale->{'items'}[$i]{'amt'};
+		      }
+		  }
+		  #check the next item for prev item discount, the disc case ignores it
+		  if($sale->{'items'}[$i + 1]{'plu'} =~ /^:/)
+		  {
+		      #the next item is a discount
+		      my $d = Discount->new($dal);
+		      next ITEM if !$d->open(substr($sale->{'items'}[$i + 1]{'plu'}, 1));
+		      next ITEM if $d->isSaleDisc;
+		      $row[$prev] -= $sale->{'items'}[$i + 1]{'amt'};
+#this part was wrong
+#it was making dollar discounts subtract from tax
+		      #check if it is taxable
+		      if(!$junkMe)
+		      {
+			  if($obj->{'taxes'} & 2)
+			  {
+			      $taxable -= $sale->{'items'}[$i + 1]{'amt'};
+			      #$lost is an adjustment for the tax column
+			      #since Open $ disc doesn't bother the tax
+			      $lost += $sale->{'items'}[$i + 1]{'amt'} if !$d->isPercentDisc;
+			      #percentdiscs affect the tax
+			  }
+			  else
+			  {
+#this isn't right, see above
+			      #the item is just exempt
+#			      $row[15] -= $sale->{'items'}[$i + 1]{'amt'};
+			  }
+		      }
+		  }
+	      } #end if obj->open...
+	  } #end else products
+      } #end for items
+
+	#the tax columns
+	if($sale->isExempt)
+	{
+	    #determine if $taxable is added to Exempt or Resale
+	    #if($custTax == 0)
+	    if(0) #toss everything to exempt
+	    {
+		#resale nothing is in here yet, so assign
+		$row[17] = $taxable;
+	    }
+	    else
+	    {
+#this is wrong, Exempt is for taxable items only
+		#regular exempt, add to the existing things
+		$row[15] = $taxable;
+	    }
+	}
+	else
+	{
+	    #$taxable should have the rate applied, and be stored in IL Sales Tax
+	    if(!$tax->open(2)) #1 is IL Sales Tax
+	    {
+		print STDERR "Couldn't open the tax rate\n";
+		next TICKET;
+	    }
+	    $row[16] = $taxable + $tax->applyTax($taxable + $lost);
+	    $row[16] -= $lost;
+	}
+    } #end if sale->open
+    else
+    {
+	print STDERR "ERROR: Couldn't open ticket \# $row[2]\n";
+	next;
+    }
+
+    #this prints the row
+    $reportLineFormat = "%10.10s\t%-40.40s\t%8.8s\t \t%10.2f\t%10.2f\t \t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t \t%10.2f\t%10.2f\t%10.2f\t \t%10.2f\t%1.1s\n";
+    $reportLineFormat =~ s/\t/  /g;
+    for(my $i = 3; $i <= $#row; $i++)
+    {
+	$ttls[$i] += $row[$i];
+    }
+    foreach my $i (@row[3..18]) #fixes the line items
+    {
+	$i = $lc->extFmt($i);
+    }
+    printf Report $reportLineFormat, @row, (checkRow(($sale->isExempt ? 0 : 1) , $lost, @row) ? $rOk : $rBad );
+}
+
+@extTtls = @ttls;
+foreach my $i (@extTtls[3..18]) #fixes the line items
+{
+    $i = $lc->extFmt($i);
+}
+
+#post lines stuff
+printf Report $reportTitlesFormat, "", "", "", "Cash Sales", "Accts Recv", "Inventory", "New Machine", "Used Machine", "Supplies", "Parts", "Labor", "Contracts", "Mileage", "Freight", "Misc", "Exempt", "IL Taxable", "Resale", "Discounts";
+
+$reportLineFormat = "\n%64.64s \t%10.2f\t%10.2f\t \t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t%10.2f\t \t%10.2f\t%10.2f\t%10.2f\t \t%10.2f\t%1.1s\n";
+$reportLineFormat =~ s/\t/  /g;
+printf Report $reportLineFormat, "TOTALS", @extTtls[3..18], (checkTtls(@extTtls) ? $rOk : $rBad );
+
+$totalReceipts = $ttls[3] + $ttls[4] - $ttls[18];
+$totalServices = $ttls[10] + $ttls[11] + $ttls[12] + $ttls[13] + $ttls[14];
+#this is the tax collected
+$st = $dal->do("select sum ((salesTaxes.taxable * salesTaxes.rate / 100):: numeric(10,0)) from salesTaxes,sales where salestaxes.id=sales.id  and sales.taxMask <> 0 and tranzDate::date >= '$start' and tranzDate::date <= '$end' and customer <> '$usId' and suspended=false and voidAt is null"); #rounds on each sale, just like the register
+($taxCollected) = $dal->fetchrow;
+$totalDeductions = $totalServices + $ttls[17] + $ttls[15] + $taxCollected;
+$taxableReceipts = $totalReceipts - $totalDeductions;
+$taxOnReceipts = $tax->applyTax($taxableReceipts);
+$st = $dal->do("select ($taxOnReceipts * 0.0175)::numeric(15,0)");
+($discount) = $dal->fetchrow;
+$taxWithDiscount = $taxOnReceipts - $discount;
+
+$st = $dal->do("select (sum(salesTaxes.taxable))::numeric(15,0) from sales, salesTaxes where customer = '$usId' and sales.id=salestaxes.id and tranzDate::date >= '$start' and tranzDate::date <= '$end' and suspended=false and voidAt is null");
+($usTaxable) = $dal->fetchrow;
+$usTax = $tax->applyTax($usTaxable);
+
+$paymentDue = $taxOnReceipts + $usTax;
+$earlyPaymentDue = $paymentDue - $discount;
+
+#summary info
+print Report "\n\nSUMMARY INFORMATION\n";
+printf Report "\t%-70.70s %12.2f\n", "Total Receipts", $lc->extFmt($totalReceipts);
+printf Report "\t%-70.70s %12.2f\n", "Total Services (Labor, Contracts)", $lc->extFmt($totalServices);
+printf Report "\t%-70.70s %12.2f\n", "Total Deductions (Services, Resale, Exempt, Tax Collected)", $lc->extFmt($totalDeductions);
+printf Report "\t%-70.70s %12.2f\n", "Taxable Receipts", $lc->extFmt($taxableReceipts);
+printf Report "\t%-70.70s %12.2f\n", "Tax Collected", $lc->extFmt($taxCollected);
+printf Report "\t%-70.70s %12.2f\n", "Tax on Receipts", $lc->extFmt($taxOnReceipts);
+printf Report "\t%-70.70s %12.2f\n", "Early Pay Discount", $lc->extFmt($discount);
+printf Report "\t%-70.70s %12.2f\n", "Tax to Pay w/Discount", $lc->extFmt($taxWithDiscount);
+#bbs info
+printf Report "\t%-70.70s %12.2f\n", "$coName Taxable Total", $lc->extFmt($usTaxable);
+printf Report "\t%-70.70s %12.2f\n", "$coName Tax on Purchases/Used", $lc->extFmt($usTax);
+print Report "\t", "=" x 83, "\n";
+printf Report "\t%-70.70s %12.2f\n", "Payment Due", $lc->extFmt($paymentDue);
+printf Report "\t%-70.70s %12.2f\n", "Payment Due (Early Pay)", $lc->extFmt($earlyPaymentDue);
+
+#exit if either the flag doesn't exist, or it's set to an off state
+if(!$sysStr->open('report-ar-spreadsheet-style-il-st1'))
+{
+    exit;
+}
+exit if !$sysStr->{'data'};
+
+print Report "\n\nIL Department of Revenue ST-1 Sales and Use Tax Return Information\n";
+$totalDeductions = $lc->roundAt($lc->roundAt($totalServices,0) + $lc->roundAt($ttls[17],0) + $lc->roundAt($ttls[15],0) + $lc->roundAt($taxCollected,0),0);
+printf Report "\t%-10.10s %12.2f\n", "1. ", $lc->roundAt($totalReceipts,0);
+printf Report "\t%-10.10s %12.2f\n", "2. ", $lc->roundAt($totalDeductions,0);
+$taxableReceipts = $lc->roundAt($lc->roundAt($totalReceipts,0) - $lc->roundAt($totalDeductions, 0),0);
+printf Report "\t%-10.10s %12.2f\n", "3. ", $taxableReceipts;
+printf Report "\t%-10.10s %12.2f\n", "4a. ", $taxableReceipts;
+printf Report "\t%-10.10s %12.2f\n", "4b. ", $lc->roundAt($taxOnReceipts,0);
+printf Report "\t%-10.10s %12.2f\n", "9. ", $lc->roundAt($taxOnReceipts,0);
+printf Report "\t%-10.10s %12.2f\n", "10. ", $lc->roundAt($discount,0);
+$taxWithDiscount = $lc->roundAt($lc->roundAt($taxOnReceipts,0) - $lc->roundAt($discount,0),0);
+printf Report "\t%-10.10s %12.2f\n", "11. ", $taxWithDiscount;
+printf Report "\t%-10.10s %12.2f\n", "12a. ", $lc->roundAt($usTaxable,0);
+printf Report "\t%-10.10s %12.2f\n", "12b. ", $lc->roundAt($usTax,0);
+printf Report "\t%-10.10s %12.2f\n", "15. ", $lc->roundAt($usTax,0);
+$earlyPaymentDue = $lc->roundAt($lc->roundAt($paymentDue, 0) - $lc->roundAt($discount, 0), 0);
+printf Report "\t%-10.10s %12.2f\n", "16. ", $earlyPaymentDue;
+printf Report "\t%-10.10s %12.2f\n", "21. ", $earlyPaymentDue;
+printf Report "\t%-10.10s %12.2f\n", "26. ", $earlyPaymentDue;
+printf Report "\t%-10.10s %12.2f\n", "28. ", $earlyPaymentDue;
+printf Report "\t%-10.10s %12.2f\n", "Voucher", $earlyPaymentDue;
+print Report "    ST-1 Worksheet for Line 2\n";
+printf Report "\t%-10.10s %12.2f\n", "1a. ", $lc->roundAt($taxCollected,0);
+printf Report "\t%-10.10s %12.2f\n", "2. ", $lc->roundAt($taxCollected,0);
+printf Report "\t%-10.10s %12.2f\n", "3. ", $lc->roundAt($ttls[17],0);
+printf Report "\t%-10.10s %12.2f\n", "9a. ", $lc->roundAt($totalServices,0);
+printf Report "\t%-10.10s %12.2f\n", "10. ", $lc->roundAt($ttls[15],0);
+printf Report "\t%-10.10s %12.2f\n", "17. ", $lc->roundAt($ttls[17],0) + $lc->roundAt($totalServices,0) + $lc->roundAt($ttls[15],0);
+printf Report "\t%-10.10s %12.2f\n", "18. ", $lc->roundAt($totalDeductions,0);
+
+print Report $pEnd;
+
+sub validDate
+{
+    my ($d) = @_;
+    return ($d =~ m/\d{2}-\d{2}-\d{4}/);
+}
+
+sub checkRow
+{
+    print STDERR "WARNING: checkRow() has been disabled!\n";
+    return 1;
+
+    #$tx determines if the row is taxable
+    my $tx = shift;
+    my $lost = shift;
+
+    #cash recv + accts recv - 2% disc (should =) exempt + sum(non-tax) + il taxable + resale (should =) sum(taxable) * 1.0625 + sum(non-taxable)
+    my $recv = $_[3] + $_[4] - $_[18];
+    my $ttls = sum(@_[10..17]);
+#    my $cats = sum(@_[10..14]) + (sum(@_[5..9]) + $lost) * ($tx ? 1.0625 : 1) - $lost; #OH MY GOD! A DEPENDANCY!
+    my $tmp = sum(@_[5..9]) + $lost;
+    my $cats = sum(@_[10..14]) + ($tx ? $tax->applyTax($tmp) : $tmp) - $lost;
+
+    #this is the rec'v = ttls constraint
+    unless($recv == $ttls)
+    {
+	print STDERR "CHECK: $_[2]: Receivables don't equal Totals ($recv $ttls)\n";
+	return 0; #failed rec' = ttls constraint
+    }
+    #this is the rec'v = sums constraint
+    unless($recv == $cats)
+    {
+	print STDERR "CHECK: $_[2]: Receivables don't equal Sums ($recv $cats)\n";
+	return 0; #failed rec' = ttls constraint
+    }
+    return 1;
+}
+
+sub checkTtls
+{
+    print STDERR "WARNING: checkTtls() has been disabled!\n";
+    return 1;
+
+    #cash recv + accts recv - 2% disc (should =) exempt + sum(non-tax) + il taxable + resale
+    #we can't check the sums in ttl, because they can be a mix of taxable and non-taxable
+    my $recv = $_[3] + $_[4] - $_[18];
+    my $ttls = sum(@_[10..17]);
+    #they are based on many rows, so the cent-fractions can add up
+    #this is the rec'v = ttls constraint
+    unless($recv == $ttls)
+    {
+	print STDERR "CHECK: TOTALS: Receivables don't equal Totals\n";
+	return 0; #failed rec' = ttls constraint
+    }
+    return 1;
+}
+
+sub sum
+{
+    my $t = 0;
+
+    foreach my $i (@_)
+    {
+	$t += $i;
+    }
+    return $t;
+}
+
+
+
+
+
+
+

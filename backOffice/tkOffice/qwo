@@ -1,0 +1,1601 @@
+#!/usr/bin/perl -w
+
+#LaneBMS/programs/qwo
+#Copyright 2003-2010 Jason Burrell
+#Copyright 2000-2002 Burrell Business Systems
+
+#this is the quickWorkOrder
+#$Id: qwo 1193 2010-10-22 21:10:11Z jason $
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+#subs in this file
+#########################
+
+#lbms
+use LanePOS::QWO;
+use LanePOS::Customer;
+use LanePOS::Machine;
+use LanePOS::Locale;
+
+#globals
+$wo = QWO->new;
+$cust = Customer->new;
+$mach = Machine->new;
+$lc = Locale->new;
+$isSaved = 0;
+$isNew = 0;
+$foundSomething = 0;
+$custName = '';
+
+# Sample SpecTcl main program for testing GUI
+use Tk;
+require Tk::Menu;
+$top = MainWindow->new();
+$top->title('L\'ane: ' . $lc->get('Lane/BackOffice/QWO'));
+
+sub date2us {
+    my $usdate = shift;
+
+    $usdate .= ''; #remove common warning messages
+
+    #change /s to -s, as that is another common input method for dates
+    $usdate =~ s/\//-/g;
+
+    my $moDay = $usdate;
+    my $yr = $usdate;
+
+    $moDay =~ s/\d{4}-//;
+    $yr =~ s/-\d{2}-\d{2}//;
+
+    return "$moDay-$yr";
+}
+
+sub us2date {
+    my $oldDate = shift;
+
+    $oldDate .= ''; #remove common warning messages
+
+    #change /s to -s, as that is another common input method for dates
+    $oldDate =~ s/\//-/g;
+
+    my $moDay = $oldDate;
+    my $yr = $oldDate;
+
+    $moDay =~ s/-\d{4}//;
+    $yr =~ s/\d{2}-\d{2}-//;
+    my $tmp = "$yr-$moDay";
+
+    return $tmp unless $tmp eq '---';
+    return '';
+}
+
+sub newSetup {			# so many things are calling new...
+    &resetFlds;
+    $isNew = 1;
+    $isSaved = 0;
+    $wo->{'dateIssued'} = `date +'%m-%d-%Y'`;
+    $wo->{'dateIssued'} =~ s/\n//;
+    $entCustomer->focus;
+}
+
+sub openShow {
+    my $wono = shift;
+
+    unless($wo->open($wono))
+    {
+	return 0;
+    }
+
+    #things to update:
+    #the entries should handle themselves
+
+    #the 3 text boxes
+    $txtTechNotes->delete('1.0', 'end');
+    $txtSolv->delete('1.0', 'end');
+    $txtProb->delete('1.0', 'end');
+    $txtProb->insert('end', $wo->{'custProb'});
+    $txtSolv->insert('end', $wo->{'solution'});
+    $txtTechNotes->insert('end', $wo->{'techNotes'});
+
+    #the type popup
+    #update the customer name fld
+    if($cust->open($wo->{'customer'}))
+    {
+	$custName = $cust->getName;
+#	$custName = $cust->{'coName'} . " (" . $cust->{'cntFirst'} . " " . $cust->{'cntLast'} . ")"; 
+    } else { $custName='';}
+    #update the status tab
+    my $tmp = $wo->{'statuses'};
+    $listStat->delete(0, 'end');
+    for(my $i = 0; $i <= $#$tmp; $i++)
+    {
+	$listStat->insert('end', $tmp->[$i]->{'status'} ." [" . $tmp->[$i]->{'created'} . "]");
+    }
+}
+
+sub machOwnerBox {
+
+    my $findme = shift;
+    my $mach = Machine->new;
+    my $rtn;
+    my $searchWin = $top->DialogBox(
+				    -title => $lc->get('Lane/QWO/Machines Owned By'),
+				    -buttons => [
+						 $lc->get('Lane/BackOffice/Buttons/OK'),
+						 $lc->get('Lane/BackOffice/Buttons/Cancel')
+						 ]
+				    );
+    my @findings = $mach->getAllOwned($findme);
+
+####
+    my $fndScroll = $searchWin->add('Scrollbar');
+    my $fndList = $searchWin->add('Listbox', -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+    $fndScroll->configure(-command => ['yview' => $fndList]);
+    $fndScroll->pack(-side => 'right', -fill => 'y');
+    $fndList->pack(-side => 'left', -fill => 'both');
+    for(my $i = 0; $i <= $#findings; ++$i)
+    {	# populate the list of findings
+	$fndList->insert('end', $findings[$i]->{'make'} . " " . $findings[$i]->{'model'} . " " . $findings[$i]->{'sn'});
+    }
+    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+    {	# the user picked something (maybe)
+	my @selected = $fndList->curselection;
+	my $tmp = $findings[$selected[0]];
+	my ($key, $val);
+	while(($key, $val) = each %$tmp)
+	{
+	    $mach->{$key} = $val;
+	}
+	$rtn = $mach;
+    } else {
+	$rtn = '';
+    }
+    #all done. Now that didn't hurt, did it?
+    $searchWin->destroy;
+    return $rtn;
+}
+
+sub custSearchBox {
+    my $cust = Customer->new;	# to override the global cust
+    my $searchCust = '';
+    my $rtn;
+    my $searchWin = $top->DialogBox(
+				    -title => $lc->get('Lane/BackOffice/Buttons/Search'),
+				    -buttons => [
+						 $lc->get('Lane/BackOffice/Buttons/Search'),
+						 $lc->get('Lane/BackOffice/Buttons/Cancel')
+						 ]
+				    );
+    $searchWin->add(Label, -text => $lc->get('Lane/Customer/Search Prompt'))->pack();
+    $searchWin->add(Entry, -textvariable => \$searchCust,
+		    -width => '30')->pack();
+    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/Search'))
+    {
+	my @findings = $cust->searchByName($searchCust);
+	if((ref $findings[0]) eq 'HASH') # it found something
+	{	# if it didn't find anything ref would be ARRAY
+	    #show the search results box
+	    my $foundWin = $top->DialogBox(
+					 -title => $lc->get('Lane/BackOffice/Search Results'),
+					 -buttons => [$lc->get('Lane/BackOffice/Buttons/OK'),
+					     $lc->get('Lane/BackOffice/Buttons/Cancel')]);
+	    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack();
+	    my $fndScroll = $foundWin->add(Scrollbar);
+	    my $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+	    $fndScroll->configure(-command => ['yview' => $fndList]);
+	    $fndScroll->pack(-side => 'right', -fill => 'y');
+	    $fndList->pack(-side => 'left', -fill => 'both');
+	    for(my $i = 0; $i <= $#findings; ++$i)
+	    {	# populate the list of findings
+		$fndList->insert('end', $findings[$i]->{'coName'} . " (" . $findings[$i]->{'cntFirst'} . " " . $findings[$i]->{'cntLast'} . ")");
+	    }
+	    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+	    {	# the user picked something (maybe)
+		my @selected = $fndList->curselection;
+		my $tmp = $findings[$selected[0]];
+		my ($key, $val);
+		while(($key, $val) = each %$tmp)
+		{
+		    $cust->{$key} = $val;
+		}
+		$foundSomething = 1;
+		$rtn = $cust;
+	    } else {
+		$foundSomething = 0;
+		$rtn = '';
+	    }
+	    $foundWin->destroy;
+	}
+    } 
+    $searchWin->destroy;
+    return $rtn;
+}
+
+sub machCustBox {		# finds wos for a given customer
+    my $cust = &custSearchBox;
+    my $mach = Machine->new;
+    my $wo = QWO->new;
+    my $rtn;
+
+    if($cust)
+    {
+	if((my @findings = $wo->searchByCust($cust->{'id'})))
+	{			# found something, show the box
+	    my $foundWin = $top->DialogBox(
+					   -title => $lc->get('Lane/BackOffice/Search Results'),
+					   -buttons => [$lc->get('Lane/BackOffice/Buttons/OK'),
+					     $lc->get('Lane/BackOffice/Buttons/Cancel')]);
+	    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack;
+	    my $fndScroll = $foundWin->add(Scrollbar);
+	    my $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+	    $fndScroll->configure(-command => ['yview' => $fndList]);
+	    $fndScroll->pack(-side => 'right', -fill => 'both');
+	    $fndList->pack(-side => 'left', -expand => '1', -fill => 'both');
+	    for(my $i = 0; $i <= $#findings; ++$i)
+	    {	# populate the list of findings
+		$fndList->insert('end', $findings[$i]->{'id'} . " " . $findings[$i]->{'dateIssued'} . " " . $findings[$i]->{'make'} . " " . $findings[$i]->{'model'} . " " . $findings[$i]->{'sn'});
+	    }
+	    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+	    {	# the user picked something (maybe)
+		my @selected = $fndList->curselection;
+		my $tmp = $findings[$selected[0]];
+		my ($key, $val);
+		while(($key, $val) = each %$tmp)
+		{
+		    $wo->{$key} = $val;
+		}
+		$rtn = $wo;
+	    } else {
+		$rtn = '';
+	    }
+	    $foundWin->destroy;
+	} else { $rtn = '';}
+	
+    } else { $rtn  = '';}
+    return $rtn;
+}
+
+sub machSearchBox {
+    my $mach = Machine->new;	# to override the global
+    my $searchMake = '';
+    my $searchModel = '';
+    my $searchSn = '';
+    my $rtn;
+    my $searchWin = $top->DialogBox(
+				    -title => $lc->get('Lane/BackOffice/Buttons/Search'),
+				    -buttons => [
+						 $lc->get('Lane/BackOffice/Buttons/Search'),
+						 $lc->get('Lane/BackOffice/Buttons/Cancel'),
+						 ]
+				    );
+    $searchWin->add(Label, -text => $lc->get('Lane/QWO/Machine Search Prompt'))->grid(-row => 0, -column => 0, -columnspan => 2);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Make'))->grid(-row => 1, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry, -textvariable => \$searchMake, -width => '30')->grid(-row => 1, -column => 1);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Model'))->grid(-row => 2, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry,-textvariable => \$searchModel, -width => '30')->grid(-row => 2, -column => 1);
+    $searchWin->add(Label, -text => $lc->get('Lane/Machine/Serial Number'))->grid(-row => 3, -column => 0, -sticky => 'e');
+    $searchWin->add(Entry, -textvariable => \$searchSn, -width => '30')->grid(-row => 3, -column => 1);
+
+    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/Search'))
+    {
+	if((my @findings = $mach->findLike($searchMake, $searchModel, $searchSn)))
+	{			# found something, show the box
+	    my $foundWin = $top->DialogBox(
+					   -title => $lc->get('Lane/BackOffice/Search Results'),
+					   -buttons => [$lc->get('Lane/BackOffice/Buttons/OK'),
+							$lc->get('Lane/BackOffice/Buttons/Cancel'),
+							]);
+	    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack;
+	    $fndScroll = $foundWin->add(Scrollbar);
+	    $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+	    $fndScroll->configure(-command => ['yview' => $fndList]);
+	    $fndScroll->pack(-side => 'right', -fill => 'both');
+	    $fndList->pack(-side => 'left', -expand => '1', -fill => 'both');
+	    for(my $i = 0; $i <= $#findings; ++$i)
+	    {	# populate the list of findings
+		$fndList->insert('end', $findings[$i]->{'make'} . " " . $findings[$i]->{'model'} . " " . $findings[$i]->{'sn'});
+	    }
+	    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+	    {	# the user picked something (maybe)
+		my @selected = $fndList->curselection;
+		my $tmp = $findings[$selected[0]];
+		my ($key, $val);
+		while(($key, $val) = each %$tmp)
+		{
+		    $mach->{$key} = $val;
+		}
+		$foundSomething = 1;
+		$rtn = $mach;
+	    } else {
+		$foundSomething = 0;
+		$rtn = '';
+	    }
+	    $foundWin->destroy;
+	}
+    }
+    $searchWin->destroy;
+    return $rtn;
+}
+
+sub statWin {			# this is used by the stat pane to input and show stat info.
+    my ($n) = @_;
+    if($n == -1) { $n = 0;}
+
+        my $dia = $top->DialogBox(
+			      -title => $lc->get('Lane/QWO/Status'),
+			      -buttons => [$lc->get('Lane/BackOffice/Buttons/OK')]
+			      );
+    $dia->add(Label, -text => $lc->get('Lane/QWO/Status'))->grid(-row => 0, -column => 0, -sticky => 'e');
+    my $stat = $dia->add(Menubutton,
+			 -indicatoron => '1',
+			 -relief => 'raised',
+			 -textvariable => \$wo->{'statuses'}[$n]{'status'},
+			 -tearoff => '0',
+			 )->grid(-row => 0, -column => 1, -sticky => 'w');
+    #build the menu items
+    my @tmp = @QWO::statuses;
+    for(my $i = 0; $i <= $#tmp; $i++)
+    {
+	$stat->command(-label => $tmp[$i], -command => [\&setStatMnu, $n, $tmp[$i]]);
+    }
+    $dia->add(Label, -text => $lc->get('Lane/QWO/Status/Staff'))->grid(-row => 1, -column => 0, -sticky => 'e');
+    my $staff = $dia->add(Entry, -textvariable => \$wo->{'statuses'}[$n]->{'staff'}, -width => '11')->grid(-row => 1, -column => 1, -sticky => 'w');
+    $dia->add(Label, -text => $lc->get('Lane/QWO/Status/Contact'))->grid(-row => 2, -column => 0, -sticky => 'e');
+    my $cnt = $dia->add(Entry, -textvariable => \$wo->{'statuses'}[$n]->{'contact'}, -width => '35')->grid(-row =>  2, -column => 1, -sticky => 'w');
+    $dia->add(Label, -text => $lc->get('Lane/BackOffice/Notes'))->grid(-row => 3, -column => 0, -sticky => 'ne');
+    my $notes = $dia->add(Text, 
+			  -height => '5',
+			  -width => '50',
+			  -wrap => 'word'
+			  )->grid(-row => 3, -column => 1, -sticky => 'w');
+    $notes->delete('1.0', 'end');
+    $notes->insert('end', $wo->{'statuses'}[$n]->{'notes'});
+
+    $staff->bind('<FocusOut>', sub {
+	$wo->{'statuses'}[$n]->{'staff'} = sprintf "%-.15s", $wo->{'statuses'}[$n]->{'staff'};
+    });
+    $cnt->bind('<FocusOut>', sub {
+	$wo->{'statuses'}[$n]->{'contact'} = sprintf "%-.35s", $wo->{'statuses'}[$n]->{'contact'};
+    });
+
+    $dia->Show;
+    $wo->{'statuses'}[$n]->{'notes'} = $notes->get('1.0', 'end');
+
+    $dia->destroy;
+}
+
+sub resetStatList {
+    #update the status tab
+    $listStat->delete(0, 'end');
+    my $tmp = $wo->{'statuses'};
+    for(my $i = 0; $i <= $#$tmp; $i++)
+    {
+	$listStat->insert('end', $tmp->[$i]->{'status'} ." [" . $tmp->[$i]->{'created'} . "]");
+    }
+}
+
+sub chkOpenMach {
+    my ($mk, $mdl, $sn) = @_;
+    my $mach = Machine->new;
+    if($mach->open($mk, $mdl, $sn))
+    {
+	return $mach;
+    }
+    return '';
+}
+
+sub setStatMnu {
+    my ($i, $val) = @_;
+    $wo->{'statuses'}[$i]{'status'} = $val;
+}
+
+sub setMenu {
+    $wo->{'type'} = shift;
+}
+
+#general use functions
+sub resetFlds {
+    #reset qwo stuff
+    $wo->_resetFlds;
+    $wo->{'counter'} = $wo->{'loanerCounter'} = 0;
+
+    $wo->{'type'} = $lc->get('Lane/BackOffice/Select');
+
+    #reset the machine info
+    $mach->_resetFlds;
+    $mach->{'counter'} = 0;
+    $custName = '';
+
+    #reset the cust stuff too
+    $cust->_resetFlds;
+
+    #this prob shouldn't be here
+    $notebook->raise('Mach');
+    $listStat->delete(0, 'end');
+    $txtSolv->delete('1.0', 'end');
+    $txtProb->delete('1.0', 'end');
+    $txtTechNotes->delete('1.0', 'end');
+}
+
+sub processWo {
+    #do some basic checks before processing the wo
+    if($wo->{'type'} eq $lc->get('Lane/BackOffice/Select')) # type must be selected
+    {
+	print STDERR "didn't make the cut (type)\n";
+	return 0;
+    }
+    my $tmp = $wo->{'statuses'};
+    for(my $i = 0; $i <= $#$tmp; $i++) # the status menu must be selected
+    {
+	if($tmp->[$i]{'status'} eq '')
+	{
+	    print STDERR "didn't make the cut (status not picked)\n";
+	    return 0;
+	}
+    }
+    if($#$tmp < 0 )		# it must have some status
+    {
+	print STDERR "didn't make the cut (no status flds)\n$#$tmp\n";
+	return 0;
+    }
+    #those were my basic checks
+
+
+    my $tMach = Machine->new;
+    #save the counter, accessories back to the $mach ($open, save) for both the machine and the loaner
+
+    #saving machine
+    if($tMach->open($wo->{'make'}, $wo->{'model'}, $wo->{'sn'}))
+    {
+	if($tMach->{'created'} le us2date($wo->{'dateIssued'}))
+	{
+	    $mach = $tMach;
+	    $mach->{'counter'} = $wo->{'counter'};
+	    #$mach->{'accessories'}
+	    $mach->{'owner'} = $wo->{'customer'};
+	    my $tmp = $wo->{'statuses'};
+#	    $mach->{'lastService'} = $wo->{'statuses'}[$#$tmp]->{'created'};
+	    
+	    my $hold = $wo->{'statuses'}[$#$tmp]->{'created'};
+	    $hold =~ s/\s\d{2}:\d{2}:\d{2}$//;
+	    $mach->{'lastService'} = date2us($hold);
+	    $mach->save;
+	}
+    }
+
+    #saving loaner
+    if($mach->open($wo->{'loanerMake'}, $wo->{'loanerModel'}, $wo->{'loanerSn'}))
+    {
+	if($mach->{'created'} le us2date($wo->{'dateIssued'}))
+	{
+	    $mach->{'make'} = $wo->{'loanerMake'};
+	    $mach->{'model'} = $wo->{'loanerModel'};
+	    $mach->{'sn'} = $wo->{'loanerSn'};
+	    $mach->{'counter'} = $wo->{'loanerCounter'};
+	    $mach->{'location'} = "Loned to: ".$wo->{'customer'}." (".$wo->{'id'}.")";
+	    $mach->save;
+	}
+    }
+
+    #save the text flds
+    $wo->{'custProb'} = sprintf "%.250s", $txtProb->get('1.0', 'end');
+    $wo->{'techNotes'} = sprintf "%.250s", $txtTechNotes->get('1.0', 'end');
+    $wo->{'solution'} = sprintf "%.250s", $txtSolv->get('1.0', 'end');
+
+#    if($isNew) { $wo->{'id'} = ''; }
+    $wo->save;
+
+#the default behavior is to start a new wo after processing
+    return 1;
+}
+
+sub printWo {
+    return 1; #disable this print
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from qwo.ui
+# For use with Tk402.002, using the grid geometry manager
+
+sub qwo_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($frame_4) = $root->Frame (
+	);
+	my($frmNotebook) = $root->Frame (
+	);
+	my($frmCustomer) = $root->Frame (
+		-relief => 'ridge',
+	);
+	my($lNumber) = $root->Label (
+		-text => $lc->get('Lane/QWO/Number'),
+	);
+	my($entNo) = $root->Entry (
+		-textvariable => \$wo->{'id'},
+		-width => '8',
+	);
+	my($lDateIssued) = $root->Label (
+		-text => $lc->get('Lane/QWO/Date Issued'),
+	);
+	my($entDateIssued) = $root->Entry (
+		-textvariable => \$wo->{'dateIssued'},
+		-width => '11',
+	);
+	my($lId) = $root->Label (
+		-text => $lc->get('Lane/QWO/Customer'),
+	);
+	$entCustomer = $root->Entry (
+		-textvariable => \$wo->{'customer'},
+		-width => '15',
+	);
+	my($bSearchByName) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Search'),
+	);
+	my($lName) = $root->Label (
+				   -text => '',
+	);
+	my($entCustName) = $root->Entry (
+		-textvariable => \$custName,
+		-width => '50',
+		-state => 'disabled'
+	);
+	my($lNotes) = $root->Label (
+		-text => $lc->get('Lane/BackOffice/Notes'),
+	);
+	my($entNotes) = $root->Entry (
+				      -textvariable => \$wo->{'notes'}
+	);
+	my($lStatus) = $root->Label (
+		-text => $lc->get('Lane/QWO/Status'),
+	);
+	my($entStatus) = $root->Entry (
+		-state => 'disabled',
+		-textvariable => \$wo->{'status'},
+		-width => '25',
+	);
+	my($lType) = $root->Label (
+		-text => $lc->get('Lane/QWO/Type'),
+	);
+	my($mnuType) = $root->Menubutton (
+		-indicatoron => '1',
+		-relief => 'raised',
+		-textvariable => \$wo->{'type'},
+		-tearoff => '0',
+	);
+	my($bProcessPrint) = $root->Button (
+		-text => $lc->get('Lane/QWO/Buttons/Process And Print'),
+	);
+	my($bProcess) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Process'),
+	);
+	my($bPrint) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Print'),
+	);
+	my($bSearchByCust) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Search'),
+	);
+	my($bNew) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/New'),
+	);
+	my($bRemove) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Remove'),
+	);
+	my($bQuit) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Quit'),
+	);
+
+	# widget commands
+
+	$bSearchByName->configure(
+		-command => sub {
+		    if(($cust = &custSearchBox))
+		    {
+			$wo->{'customer'} = $cust->{'id'};
+			$custName = $cust->getName;
+#			$custName = $cust->{'coName'} ." (".$cust->{'cntFirst'}." ".$cust->{'cntLast'}.")";
+		    }
+		}
+	);
+	$bProcessPrint->configure(
+		-command => sub {
+		    if(&processWo)
+		    {
+			&printWo;
+			#the default behavior is to start a new wo after processing
+			&newSetup;
+		    }
+		}
+	);
+	$bProcess->configure(
+		-command => sub {
+		    if(&processWo)
+		    {
+			#the default behavior is to start a new wo after processing
+			&newSetup;
+		    }
+		}
+	);
+	$bPrint->configure(
+		-command => sub {&printWo;}
+	);
+	$bSearchByCust->configure(
+		-command => sub {
+		    my $tmp = &machCustBox;
+		    if($tmp->{'id'})
+		    {
+			&openShow($tmp->{'id'});
+		    }
+		}
+	);
+	$bNew->configure(
+		-command => sub {
+		    &newSetup;
+#		    &resetFlds;
+#		    $isNew = 1;
+#		    $isSaved = 0;
+#		    $wo->{'dateIssued'} = `date +'%m-%d-%Y'`;
+#		    $wo->{'dateIssued'} =~ s/\n//;
+		}
+	);
+	$bRemove->configure(
+		-command => sub {
+		    require Tk::DialogBox;
+		    my $yes = $lc->get('Lane/BackOffice/Buttons/Yes, Remove');
+		    my $popupWin = $top->DialogBox(
+						   -title => $lc->get('Lane/BackOffice/Confirmation'),
+						   -buttons => [$lc->get('Lane/BackOffice/Buttons/No, Cancel'), $yes]
+						   );
+		    $popupWin->add(Label, -text => $lc->get('Lane/BackOffice/Remove Prompt'))->pack();
+		    $popupWin->add(Label, -text => "[$wo->{'id'}]")->pack();
+		    
+		    if($popupWin->Show eq $yes)
+		    {
+			$popupWin->destroy;
+			$wo->remove;
+			&newSetup;
+		    }
+		    else
+		    {
+			$popupWin->destroy;
+		    }
+		    
+		}
+	);
+	$bQuit->configure(
+		-command => sub { exit; }
+	);
+
+	# Geometry management
+
+	$frame_4->grid(
+		-in => $root,
+		-column => '1',
+		-row => '6',
+		-columnspan => '4'
+	);
+	$frmNotebook->grid(
+		-in => $root,
+		-column => '1',
+		-row => '5',
+		-columnspan => '4'
+	);
+	$frmCustomer->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-columnspan => '4'
+	);
+	$lNumber->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entNo->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$lDateIssued->grid(
+		-in => $root,
+		-column => '3',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entDateIssued->grid(
+		-in => $root,
+		-column => '4',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$lId->grid(
+		-in => $frmCustomer,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entCustomer->grid(
+		-in => $frmCustomer,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$bSearchByName->grid(
+		-in => $frmCustomer,
+		-column => '3',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$lName->grid(
+		-in => $frmCustomer,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$entCustName->grid(
+		-in => $frmCustomer,
+		-column => '2',
+		-row => '2',
+		-columnspan => '2',
+		-sticky => 'w'
+	);
+	$lNotes->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entNotes->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-columnspan => '3',
+		-sticky => 'w'
+	);
+	$lStatus->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entStatus->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$lType->grid(
+		-in => $root,
+		-column => '3',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$mnuType->grid(
+		-in => $root,
+		-column => '4',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$bProcessPrint->grid(
+		-in => $frame_4,
+		-column => '1',
+		-row => '1'
+	);
+	$bProcess->grid(
+		-in => $frame_4,
+		-column => '2',
+		-row => '1'
+	);
+	$bPrint->grid(
+		-in => $frame_4,
+		-column => '3',
+		-row => '1'
+	);
+	$bSearchByCust->grid(
+		-in => $frame_4,
+		-column => '4',
+		-row => '1'
+	);
+	$bNew->grid(
+		-in => $frame_4,
+		-column => '5',
+		-row => '1'
+	);
+	$bRemove->grid(
+		-in => $frame_4,
+		-column => '6',
+		-row => '1'
+	);
+	$bQuit->grid(
+		-in => $frame_4,
+		-column => '7',
+		-row => '1'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(5, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(6, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+
+	# container $frame_4 (rows)
+	$frame_4->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $frame_4 (columns)
+	$frame_4->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(5, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(6, -weight => 0, -minsize => 30);
+	$frame_4->gridColumnconfigure(7, -weight => 0, -minsize => 30);
+
+# additional interface code
+	#additional items
+	$notebook = $frmNotebook->NoteBook()->pack;
+	my $nbMach = $notebook->add('Mach', -label => $lc->get('Lane/QWO/Machine'));
+	my $nbLoaner = $notebook->add('Loaner', -label => $lc->get('Lane/QWO/Loaner'));
+	my $nbProbSolv = $notebook->add('ProbSolv', -label => $lc->get('Lane/QWO/Problem and Solution'));
+	my $nbTech = $notebook->add('Tech', -label => $lc->get('Lane/QWO/Technician'));
+	my $nbStat = $notebook->add('Status', -label => $lc->get('Lane/QWO/Status'));
+
+	&qwoMachine_ui($nbMach);
+	&qwoLoaner_ui($nbLoaner);
+	&qwoProbSolv_ui($nbProbSolv);
+	&qwoStat_ui($nbStat);
+	&qwoTech_ui($nbTech);
+
+	#type menu builder
+	my @tmp = @QWO::types;
+	for(my $i = 0; $i <= $#tmp; $i++)
+	{
+	    $mnuType->command(-label => $tmp[$i], -command => [ \&setMenu, $tmp[$i] ]);
+	}
+
+	#events mainevents
+	$entNo->bind('<FocusOut>', sub {
+#	    unless($isNew) {
+		$wo->{'id'} = sprintf "%.7s", int($wo->{'id'});
+#		&openShow($wo->{'id'});
+#	    }
+	});
+	$entNo->bind('<Return>', sub {
+	    &openShow($wo->{'id'});
+	    $entNo->focusNext()->focus();
+	} );
+#	$ent->bind('<FocusOut>', sub { $wo->{'dateIssued'} = sprintf "%.0f", $wo->{'counter'};});
+	$entCustomer->bind('<FocusOut>', sub { 
+	    $wo->{'customer'} = sprintf "%.15s", $wo->{'customer'};
+	    if($cust->open($wo->{'customer'}))
+	    {
+		$custName = $cust->getName;
+#		$custName = $cust->{'coName'} ." (".$cust->{'cntFirst'}." ".$cust->{'cntLast'}.")";
+	    }
+
+	});
+	$entCustomer->bind('<Return>', sub {$entCustomer->focusNext()->focus();} );
+	$entNotes->bind('<FocusOut>', sub { $wo->{'notes'} = sprintf "%.50s", $wo->{'notes'};});
+	$entNotes->bind('<Return>', sub {$entNotes->focusNext()->focus();} );
+	$entDateIssued->bind('<FocusOut>', sub {
+	    unless($wo->{'dateIssued'} =~ m/\d{2}-\d{2}-\d{4}/)
+	    {
+		$entDateIssued->bell;
+		$wo->{'dateIssued'} = '00-00-0000';
+	    }
+	});
+	$entDateIssued->bind('<Return>', sub {$entDateIssued->focusNext()->focus();} );
+	$bSearchByName->bind('<Return>', sub {$bSearchByName->focusNext()->focus();} );
+
+# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from qwoMachine.ui
+# For use with Tk402.002, using the grid geometry manager
+sub qwoMachine_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($frame_1) = $root->Frame (
+	);
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Machine/Make'),
+	);
+	my($entMake) = $root->Entry (
+		-textvariable => \$wo->{'make'},
+		-width => '30',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Machine/Model'),
+	);
+	my($entModel) = $root->Entry (
+		-textvariable => \$wo->{'model'},
+		-width => '30',
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Machine/Serial Number'),
+	);
+	my($entSn) = $root->Entry (
+		-textvariable => \$wo->{'sn'},
+		-width => '30',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Machine/Counter'),
+	);
+	my($entCounter) = $root->Entry (
+		-textvariable => \$wo->{'counter'},
+		-width => '10',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Machine/Accessories'),
+	);
+	my($entAccessories) = $root->Entry (
+		-textvariable => \$wo->{'accessories'},
+		-width => '30',
+	);
+	my($bSearchByOwner) = $root->Button (
+		-text => $lc->get('Lane/QWO/Search By Owner'),
+	);
+	my($bSearchByMachine) = $root->Button (
+		-text => $lc->get('Lane/QWO/Search By Machine'),
+	);
+	#configs
+	$bSearchByOwner->configure(-command => sub {
+#	    $bSearchByOwner->bell;
+	    my $tmp = &machOwnerBox($wo->{'customer'});
+	    if($tmp)
+	    {
+		$wo->{'make'} = $tmp->{'make'};
+		$wo->{'model'} = $tmp->{'model'};
+		$wo->{'sn'} = $tmp->{'sn'};
+		$wo->{'counter'} = $tmp->{'counter'};
+		$wo->{'accessories'} = $tmp->{'accessories'};
+	
+	    }
+	});
+	$bSearchByMachine->configure(-command => sub {
+	    my $tmp = &machSearchBox;
+	    if($tmp)
+	    {
+		$wo->{'make'} = $tmp->{'make'};
+		$wo->{'model'} = $tmp->{'model'};
+		$wo->{'sn'} = $tmp->{'sn'};
+		$wo->{'counter'} = $tmp->{'counter'};
+		$wo->{'accessories'} = $tmp->{'accessories'};
+	    }
+	});
+
+	# Geometry management
+
+	$frame_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '6',
+		-columnspan => '2'
+	);
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entMake->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$entModel->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entSn->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entCounter->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '1',
+		-row => '5',
+		-sticky => 'e'
+	);
+	$entAccessories->grid(
+		-in => $root,
+		-column => '2',
+		-row => '5',
+		-sticky => 'w'
+	);
+	$bSearchByOwner->grid(
+		-in => $frame_1,
+		-column => '1',
+		-row => '1'
+	);
+	$bSearchByMachine->grid(
+		-in => $frame_1,
+		-column => '2',
+		-row => '1'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(5, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(6, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# container $frame_1 (rows)
+	$frame_1->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $frame_1 (columns)
+	$frame_1->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_1->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# additional interface code
+	$entMake->bind('<FocusOut>', sub {
+	    $wo->{'make'} = sprintf "%.35s", $wo->{'make'};
+#	    if($wo->{'make'} and $wo->{'model'} and $wo->{'sn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'make'},$wo->{'model'},$wo->{'sn'});
+#		if($tmp)
+#		{
+#		    $wo->{'make'} = $tmp->{'make'};
+#		    $wo->{'model'} = $tmp->{'model'};
+#		    $wo->{'sn'} = $tmp->{'sn'};
+#		    $wo->{'counter'} = $tmp->{'counter'};
+#		    $wo->{'accessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entMake->bind('<Return>', sub {$entMake->focusNext()->focus();} );
+	$entModel->bind('<FocusOut>', sub {
+	    $wo->{'model'} = sprintf "%.35s", $wo->{'model'};
+#	    if($wo->{'make'} and $wo->{'model'} and $wo->{'sn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'make'},$wo->{'model'},$wo->{'sn'});
+#		if($tmp)
+#		{
+#		    $wo->{'make'} = $tmp->{'make'};
+#		    $wo->{'model'} = $tmp->{'model'};
+#		    $wo->{'sn'} = $tmp->{'sn'};
+#		    $wo->{'counter'} = $tmp->{'counter'};
+#		    $wo->{'accessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entModel->bind('<Return>', sub {$entModel->focusNext()->focus();} );
+	$entSn->bind('<FocusOut>', sub { 
+	    $wo->{'sn'} = sprintf "%.35s", $wo->{'sn'};
+#	    if($wo->{'make'} and $wo->{'model'} and $wo->{'sn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'make'},$wo->{'model'},$wo->{'sn'});
+#		if($tmp)
+#		{
+#		    $wo->{'make'} = $tmp->{'make'};
+#		    $wo->{'model'} = $tmp->{'model'};
+#		    $wo->{'sn'} = $tmp->{'sn'};
+#		    $wo->{'counter'} = $tmp->{'counter'};
+#		    $wo->{'accessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entSn->bind('<Return>', sub {$entSn->focusNext()->focus();} );
+	$entCounter->bind('<FocusOut>', sub { $wo->{'counter'} = sprintf "%.0f", $wo->{'counter'};});
+	$entCounter->bind('<Return>', sub {$entCounter->focusNext()->focus();} );
+	$entAccessories->bind('<FocusOut>', sub { $wo->{'accessories'} = sprintf "%.35s", $wo->{'accessories'};});
+	$entAccessories->bind('<Return>', sub {$entAccessories->focusNext()->focus();} );
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LanePOS-0.1/specPerl.ui.files/qwoLoaner.ui
+# For use with Tk402.002, using the grid geometry manager
+sub qwoLoaner_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($frame_1) = $root->Frame (
+	);
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Machine/Make'),
+	);
+	my($entMake) = $root->Entry (
+		-textvariable => \$wo->{'loanerMake'},
+		-width => '30',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Machine/Model'),
+	);
+	my($entModel) = $root->Entry (
+		-textvariable => \$wo->{'loanerModel'},
+		-width => '30',
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Machine/Serial Number'),
+	);
+	my($entSn) = $root->Entry (
+		-textvariable => \$wo->{'loanerSn'},
+		-width => '30',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Machine/Counter'),
+	);
+	my($entCounter) = $root->Entry (
+		-textvariable => \$wo->{'loanerCounter'},
+		-width => '10',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Machine/Accessories'),
+	);
+	my($entAccessories) = $root->Entry (
+		-textvariable => \$wo->{'loanerAccessories'},
+		-width => '30',
+	);
+	my($bSearchByOwner) = $root->Button (
+		-text => $lc->get('Lane/QWO/Search By Owner'),
+	);
+	my($bSearchByMachine) = $root->Button (
+		-text => $lc->get('Lane/QWO/Search By Machine'),
+	);
+
+	# widget commands
+	#configs
+	$bSearchByOwner->configure(-command => sub {
+	    use LanePOS::SysString;
+	    my $s = SysString->new();
+	    $s->open('company-customer-id');
+	    my $tmp = &machOwnerBox($s->{'data'});
+	    if($tmp)
+	    {
+		$wo->{'loanerMake'} = $tmp->{'make'};
+		$wo->{'loanerModel'} = $tmp->{'model'};
+		$wo->{'loanerSn'} = $tmp->{'sn'};
+		$wo->{'loanerCounter'} = $tmp->{'counter'};
+		$wo->{'loanerAccessories'} = $tmp->{'accessories'};
+	
+	    }
+	});
+	$bSearchByMachine->configure(-command => sub {
+	    my $tmp = &machSearchBox;
+	    if($tmp)
+	    {
+		$wo->{'loanerMake'} = $tmp->{'make'};
+		$wo->{'loanerModel'} = $tmp->{'model'};
+		$wo->{'loanerSn'} = $tmp->{'sn'};
+		$wo->{'loanerCounter'} = $tmp->{'counter'};
+		$wo->{'loanerAccessories'} = $tmp->{'accessories'};
+	    }
+	});
+
+	# Geometry management
+
+	$frame_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '6',
+		-columnspan => '2'
+	);
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entMake->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$entModel->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entSn->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entCounter->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '1',
+		-row => '5',
+		-sticky => 'e'
+	);
+	$entAccessories->grid(
+		-in => $root,
+		-column => '2',
+		-row => '5',
+		-sticky => 'w'
+	);
+	$bSearchByOwner->grid(
+		-in => $frame_1,
+		-column => '1',
+		-row => '1'
+	);
+	$bSearchByMachine->grid(
+		-in => $frame_1,
+		-column => '2',
+		-row => '1'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(5, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(6, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# container $frame_1 (rows)
+	$frame_1->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $frame_1 (columns)
+	$frame_1->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frame_1->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# additional interface code
+	$entMake->bind('<FocusOut>', sub {
+	    $wo->{'loanerMake'} = sprintf "%.35s", $wo->{'loanerMake'};
+#	    if($wo->{'loanerMake'} and $wo->{'loanerModel'} and $wo->{'loanerSn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'loanerMake'},$wo->{'loanerModel'},$wo->{'loanerSn'});
+#		if($tmp)
+#		{
+#		    $wo->{'loanerMake'} = $tmp->{'make'};
+#		    $wo->{'loanerModel'} = $tmp->{'model'};
+#		    $wo->{'loanerSn'} = $tmp->{'sn'};
+#		    $wo->{'loanerCounter'} = $tmp->{'counter'};
+#		    $wo->{'loanerAccessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entMake->bind('<Return>', sub {$entMake->focusNext()->focus();} );
+	$entModel->bind('<FocusOut>', sub {
+	    $wo->{'loanerModel'} = sprintf "%.35s", $wo->{'loanerModel'};
+#	    if($wo->{'loanerMake'} and $wo->{'loanerModel'} and $wo->{'loanerSn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'loanerMake'},$wo->{'loanerModel'},$wo->{'loanerSn'});
+#		if($tmp)
+#		{
+#		    $wo->{'loanerMake'} = $tmp->{'make'};
+#		    $wo->{'loanerModel'} = $tmp->{'model'};
+#		    $wo->{'loanerSn'} = $tmp->{'sn'};
+#		    $wo->{'loanerCounter'} = $tmp->{'counter'};
+#		    $wo->{'loanerAccessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entModel->bind('<Return>', sub {$entModel->focusNext()->focus();} );
+	$entSn->bind('<FocusOut>', sub { 
+	    $wo->{'loanerSn'} = sprintf "%.35s", $wo->{'loanerSn'};
+#	    if($wo->{'loanerMake'} and $wo->{'loanerModel'} and $wo->{'loanerSn'})
+#	    {
+#		my $tmp = &chkOpenMach($wo->{'loanerMake'},$wo->{'loanerModel'},$wo->{'loanerSn'});
+#		if($tmp)
+#		{
+#		    $wo->{'loanerMake'} = $tmp->{'make'};
+#		    $wo->{'loanerModel'} = $tmp->{'model'};
+#		    $wo->{'loanerSn'} = $tmp->{'sn'};
+#		    $wo->{'loanerCounter'} = $tmp->{'counter'};
+#		    $wo->{'loanerAccessories'} = $tmp->{'accessories'};
+#		}
+#	    }
+	});
+	$entSn->bind('<Return>', sub {$entSn->focusNext()->focus();} );
+	$entCounter->bind('<FocusOut>', sub { $wo->{'loanerCounter'} = sprintf "%.0f", $wo->{'loanerCounter'};});
+	$entCounter->bind('<Return>', sub {$entCounter->focusNext()->focus();} );
+	$entAccessories->bind('<FocusOut>', sub { $wo->{'loanerAccessories'} = sprintf "%.35s", $wo->{'loanerAccessories'};});
+	$entAccessories->bind('<Return>', sub {$entAccessories->focusNext()->focus();} );
+
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LaneBMS-0.1/specPerl.ui.files/qwoProbSolv.ui
+# For use with Tk402.002, using the grid geometry manager
+sub qwoProbSolv_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/QWO/Problem'),
+	);
+	$txtProb = $root->Text (
+		-height => '5',
+		-width => '50',
+		-wrap => 'word',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/QWO/Solution'),
+	);
+	$txtSolv = $root->Text (
+		-height => '5',
+		-width => '50',
+		-wrap => 'word',
+	);
+
+	# Geometry management
+
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'ne'
+	);
+	$txtProb->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'nesw'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'ne'
+	);
+	$txtSolv->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'nesw'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# additional interface code
+
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LaneBMS-0.1/specPerl.ui.files/qwoTech.ui
+# For use with Tk402.002, using the grid geometry manager
+sub qwoTech_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/QWO/Technician'),
+	);
+	my($entTech) = $root->Entry (
+		-textvariable => \$wo->{'tech'},
+		-width => '11',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/BackOffice/Notes'),
+	);
+	$txtTechNotes = $root->Text (
+		-height => '5',
+		-width => '50',
+		-wrap => 'word',
+	);
+
+	# Geometry management
+
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entTech->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'ne'
+	);
+	$txtTechNotes->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'nesw'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# additional interface code
+	$entTech->bind('<FocusOut>', sub { $wo->{'tech'} = sprintf "%.10s", $wo->{'tech'};});
+	$entTech->bind('<Return>', sub {$entTech->focusNext()->focus();} );
+
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LaneBMS-0.1/specPerl.ui.files/qwoStat.ui
+# For use with Tk402.002, using the grid geometry manager
+sub qwoStat_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	$listStat = $root->Listbox (
+		-height => '0',
+		-width => '0',
+	);
+	my($bAdd) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Add'),
+	);
+	my($bView) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/View'),
+	);
+
+	# widget commands
+
+	$bAdd->configure(
+		-command => sub {
+		    $wo->newStat;
+		    my $tmp = $wo->{'statuses'};
+		    &statWin($#$tmp);
+		    &resetStatList;
+		}
+	);
+	$bView->configure (
+			   -command => sub
+			   {
+			       unless((my @tmp = $listStat->curselection) eq '')
+			       {
+				   &statWin($tmp[0]);
+				   &resetStatList;
+			       }
+			   }
+			   );
+
+	# Geometry management
+
+	$listStat->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+			-columnspan => '2',
+		-sticky => 'nesw'
+	);
+	$bAdd->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$bView->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'e'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+
+	# additional interface code
+
+	# end additional interface code
+}
+
+qwo_ui $top;
+&newSetup;
+Tk::MainLoop;
+1;
+
+
+
+

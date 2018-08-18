@@ -1,0 +1,58 @@
+#!/usr/bin/perl -w
+
+#lanesql Copyright 2006 Jason Burrell
+#$Id: lanesql 1132 2010-09-19 21:36:50Z jason $
+
+=pod
+
+=head1 NAME
+
+backOffice/utilities/lanesql - start C<psql> using LE<8217>E<acirc>neE<8217>s configuration file.
+
+=head1 SYNOPSIS
+
+lanesql
+
+=head1 DESCRIPTION
+
+C<lanesql> allows one to use the psql tool without manually setting the command line options to connect to LE<8217>E<acirc>neE<8217>s datasource.
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program contains no known bugs.
+
+=back
+
+=head1 SEE ALSO
+
+The LE<8217>E<acirc>ne Website L<http://l-ane.net/>
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+use LanePOS::Dal;
+
+my $dal = Dal->new;
+
+my $db = $dal->{'dsn'}{'db'};
+my $host = $dal->{'dsn'}{'host'};
+#warn "$0: db=$db host=$host\n";
+
+my @opt;
+push @opt, '-d', $db;
+push @opt, '-h', $host if $host;
+exec('psql', @opt, @ARGV);

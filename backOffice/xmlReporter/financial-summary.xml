@@ -1,0 +1,107 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+<rpt:if subject='Constant.0' verb='==' object='Constant.1'><!-- This file is LanePOS/backOffice/xmlReporter/financial-summary.xml. It is part of L'ane, thus Copyright 2005 Jason Burrell. --></rpt:if>
+<rpt:promptset>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Financial Summary/Title' textDefault='Financial Summary' variable='title' type='fixed'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Financial Summary/Starting Date' textDefault='Starting Date' variable='start' type='date'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Financial Summary/Ending Date' textDefault='Ending Date' variable='end' type='date'/>
+</rpt:promptset>
+<head>
+<title>L&#x2019;&#xe2;ne Financial Summary Report: <rpt:output value='UserInterface.start'/> &#x2014; <rpt:output value='UserInterface.end'/></title>
+<style>
+body
+{
+   font-family: Times, Serif;
+   font-size: 12pt;
+   background-color: white;
+   color: black;
+   margin-left: 5%;
+   margin-right: 5%;
+   width: 90%;
+}
+table.body
+{
+   text-align: left;
+   width: 100%;
+}
+table.data
+{
+   text-align: left;
+   width: 100%;
+}
+table thead
+{
+   font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+<h1>Financial Summary Report: <rpt:output value='UserInterface.start'/> &#x2014; <rpt:output value='UserInterface.end'/></h1>
+<h2>Statistics</h2>
+
+<!-- convert the dates to timestamps -->
+<rpt:call object='Reporter' method='cat' argument0='UserInterface.start' argument1='Constant. 00:00'/><rpt:call object='Reporter' method='set' argument0='Constant.start' argument1='Reporter.lastCall'/>
+<rpt:call object='Reporter' method='cat' argument0='UserInterface.end' argument1='Constant. 23:59:59.999999'/><rpt:call object='Reporter' method='set' argument0='Constant.end' argument1='Reporter.lastCall'/>
+
+<rpt:call object='Sale' method='summarizeFinancialsByRange' argument0='Reporter.start' argument1='Reporter.end' context='array'/><rpt:foreach set='Reporter.lastCall' element='h'><rpt:call object='Reporter' method='set' argument0='Constant.numTickets' argument1='h.numTickets' /><rpt:call object='Reporter' method='set' argument0='Constant.moneyTickets' argument1='h.moneyTickets' /><rpt:call object='Reporter' method='set' argument0='Constant.numSales' argument1='h.numSales' /><rpt:call object='Reporter' method='set' argument0='Constant.moneySales' argument1='h.moneySales' /><rpt:call object='Reporter' method='set' argument0='Constant.numProducts' argument1='h.numProducts' /><rpt:call object='Reporter' method='set' argument0='Constant.moneyProducts' argument1='h.moneyProducts' /><rpt:call object='Reporter' method='set' argument0='Constant.numRa' argument1='h.numRa' /><rpt:call object='Reporter' method='set' argument0='Constant.moneyRa' argument1='h.moneyRa' /></rpt:foreach><table class='data'>
+   <thead><tr><td></td><td></td><td style='text-align: right;'>Average</td></tr></thead>
+   <tbody>
+      <tr><td>Number of Transactions</td><td style='text-align: right;'><rpt:output value='Reporter.numTickets'/></td><td></td></tr>
+      <tr><td>Value of Transactions</td><td style='text-align: right;'><rpt:output value='Reporter.moneyTickets' format='money'/></td><td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='Reporter.moneyTickets' argument1='Reporter.numTickets'/><rpt:output value='Reporter.lastCall' format='money'/>/transaction</td></tr>
+
+      <tr><td>Number of Sales</td><td style='text-align: right;'><rpt:output value='Reporter.numSales'/></td><td></td></tr>
+      <tr><td>Value of Sales</td><td style='text-align: right;'><rpt:output value='Reporter.moneySales' format='money'/></td><td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='Reporter.moneySales' argument1='Reporter.numSales'/><rpt:output value='Reporter.lastCall' format='money'/>/transaction</td></tr>
+      <tr><td>Number of Products Sold</td><td style='text-align: right;'><rpt:output value='Reporter.numProducts'/></td><td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='Reporter.numProducts' argument1='Reporter.numTickets'/><rpt:output value='Reporter.lastCall'/>/transaction</td></tr>
+      <tr><td>Value of Products Sold</td><td style='text-align: right;'><rpt:output value='Reporter.moneyProducts' format='money'/></td><td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='Reporter.moneyProducts' argument1='Reporter.numProducts'/><rpt:output value='Reporter.lastCall' format='money'/>/product</td></tr>
+      <tr><td>Number of R/A Transactions</td><td style='text-align: right;'><rpt:output value='Reporter.numRa'/></td><td></td></tr>
+      <tr><td>Value of R/A Transactions</td><td style='text-align: right;'><rpt:output value='Reporter.moneyRa' format='money'/></td><td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='Reporter.moneyRa' argument1='Reporter.numRa'/><rpt:output value='Reporter.lastCall' format='money'/>/transaction</td></tr>
+
+<!--      <tr><td></td><td style='text-align: right;'><rpt:output value='Reporter.'/></td><td></td></tr> -->
+   </tbody>
+</table>
+
+<h2>Discounts</h2>
+<table class='data'>
+   <thead><tr><td></td><td style='text-align: right;'>Qty</td><td style='text-align: right;'>Amount</td><td style='text-align: right;'>Average</td></tr></thead>
+   <tbody>
+      <rpt:call object='Sale' method='summarizeDiscountsByRange' argument0='Reporter.start' argument1='Reporter.end' context='array'/><rpt:foreach set='Reporter.lastCall' element='d'>
+         <tr>
+	   <td><rpt:output value='d.descr'/></td>
+	   <td style='text-align: right;'><rpt:output value='d.qty' format='internal' /></td>
+	   <td style='text-align: right;'><rpt:output value='d.amt' format='money' /></td>
+	   <td style='text-align: right;'><rpt:call object='Reporter' method='div' argument0='d.amt' argument1='d.qty'/><rpt:output value='Reporter.lastCall' format='money'/>/discount</td>
+	 </tr>
+      </rpt:foreach>
+   </tbody>
+</table>
+
+<h2>Taxes</h2>
+<table class='data'>
+   <thead><tr><td></td><td style='text-align: right;'>Taxable</td><td style='text-align: right;'>Tax Collected</td></tr></thead>
+   <tbody>
+      <rpt:call object='Sale' method='summarizeTaxesByRange' argument0='Reporter.start' argument1='Reporter.end' context='array'/><rpt:foreach set='Reporter.lastCall' element='x'>
+         <tr>
+	   <td><rpt:output value='x.descr'/></td>
+	   <td style='text-align: right;'><rpt:output value='x.taxable' format='money' /></td>
+	   <td style='text-align: right;'><rpt:output value='x.taxCollected' format='money' /></td>
+	 </tr>
+      </rpt:foreach>
+   </tbody>
+</table>
+
+<h2>Tenders</h2>
+<table class='data'>
+   <tbody>
+     <rpt:call object='Sale' method='summarizeTendersByRange' argument0='Reporter.start' argument1='Reporter.end' context='array' />
+     <rpt:foreach set='Reporter.lastCall' element='t'>
+       <tr><td><rpt:output value='t.descr'/></td><td style='text-align: right;'><rpt:output value='t.amt' format='money'/></td><td></td></tr>
+     </rpt:foreach>
+   </tbody>
+</table>
+
+<rpt:call object='Reporter' method='today' /><p style='font-weight: normal; font-size: smaller;'>Generated by <rpt:output value='Reporter.user'/> @ <rpt:output value='Reporter.today' format='shortDate'/></p>
+</body>
+</html>

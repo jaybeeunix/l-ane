@@ -1,0 +1,116 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+
+<head>
+<title>L’âne XML Reporter Test: Constant foreach Tests</title>
+</head>
+
+<body>
+<h1>Constant foreach Tests</h1>
+<h2>Simple foreach</h2>
+<p>This is iteration 1.</p>
+<p>This is iteration 2.</p>
+<p>This is iteration 3.</p>
+<p>This is iteration 4.</p>
+<p>This is iteration 5.</p>
+
+
+<h2>Nested Simple foreach</h2>
+<h3>Two Levels</h3>
+
+<p>Outter loop 1, Inner loop 1.</p>
+<p>Outter loop 1, Inner loop 2.</p>
+<p>Outter loop 1, Inner loop 3.</p>
+<p>Outter loop 1, Inner loop 4.</p>
+
+<p>Outter loop 2, Inner loop 1.</p>
+<p>Outter loop 2, Inner loop 2.</p>
+<p>Outter loop 2, Inner loop 3.</p>
+<p>Outter loop 2, Inner loop 4.</p>
+
+<p>Outter loop 3, Inner loop 1.</p>
+<p>Outter loop 3, Inner loop 2.</p>
+<p>Outter loop 3, Inner loop 3.</p>
+<p>Outter loop 3, Inner loop 4.</p>
+
+
+<h3>Three Levels</h3>
+
+
+<p>Outter loop 1, Inner loop 1, Deep loop 1.</p>
+<p>Outter loop 1, Inner loop 1, Deep loop 2.</p>
+<p>Outter loop 1, Inner loop 1, Deep loop 3.</p>
+<p>Outter loop 1, Inner loop 1, Deep loop 4.</p>
+<p>Outter loop 1, Inner loop 1, Deep loop 5.</p>
+
+<p>Outter loop 1, Inner loop 2, Deep loop 1.</p>
+<p>Outter loop 1, Inner loop 2, Deep loop 2.</p>
+<p>Outter loop 1, Inner loop 2, Deep loop 3.</p>
+<p>Outter loop 1, Inner loop 2, Deep loop 4.</p>
+<p>Outter loop 1, Inner loop 2, Deep loop 5.</p>
+
+<p>Outter loop 1, Inner loop 3, Deep loop 1.</p>
+<p>Outter loop 1, Inner loop 3, Deep loop 2.</p>
+<p>Outter loop 1, Inner loop 3, Deep loop 3.</p>
+<p>Outter loop 1, Inner loop 3, Deep loop 4.</p>
+<p>Outter loop 1, Inner loop 3, Deep loop 5.</p>
+
+<p>Outter loop 1, Inner loop 4, Deep loop 1.</p>
+<p>Outter loop 1, Inner loop 4, Deep loop 2.</p>
+<p>Outter loop 1, Inner loop 4, Deep loop 3.</p>
+<p>Outter loop 1, Inner loop 4, Deep loop 4.</p>
+<p>Outter loop 1, Inner loop 4, Deep loop 5.</p>
+
+
+<p>Outter loop 2, Inner loop 1, Deep loop 1.</p>
+<p>Outter loop 2, Inner loop 1, Deep loop 2.</p>
+<p>Outter loop 2, Inner loop 1, Deep loop 3.</p>
+<p>Outter loop 2, Inner loop 1, Deep loop 4.</p>
+<p>Outter loop 2, Inner loop 1, Deep loop 5.</p>
+
+<p>Outter loop 2, Inner loop 2, Deep loop 1.</p>
+<p>Outter loop 2, Inner loop 2, Deep loop 2.</p>
+<p>Outter loop 2, Inner loop 2, Deep loop 3.</p>
+<p>Outter loop 2, Inner loop 2, Deep loop 4.</p>
+<p>Outter loop 2, Inner loop 2, Deep loop 5.</p>
+
+<p>Outter loop 2, Inner loop 3, Deep loop 1.</p>
+<p>Outter loop 2, Inner loop 3, Deep loop 2.</p>
+<p>Outter loop 2, Inner loop 3, Deep loop 3.</p>
+<p>Outter loop 2, Inner loop 3, Deep loop 4.</p>
+<p>Outter loop 2, Inner loop 3, Deep loop 5.</p>
+
+<p>Outter loop 2, Inner loop 4, Deep loop 1.</p>
+<p>Outter loop 2, Inner loop 4, Deep loop 2.</p>
+<p>Outter loop 2, Inner loop 4, Deep loop 3.</p>
+<p>Outter loop 2, Inner loop 4, Deep loop 4.</p>
+<p>Outter loop 2, Inner loop 4, Deep loop 5.</p>
+
+
+<p>Outter loop 3, Inner loop 1, Deep loop 1.</p>
+<p>Outter loop 3, Inner loop 1, Deep loop 2.</p>
+<p>Outter loop 3, Inner loop 1, Deep loop 3.</p>
+<p>Outter loop 3, Inner loop 1, Deep loop 4.</p>
+<p>Outter loop 3, Inner loop 1, Deep loop 5.</p>
+
+<p>Outter loop 3, Inner loop 2, Deep loop 1.</p>
+<p>Outter loop 3, Inner loop 2, Deep loop 2.</p>
+<p>Outter loop 3, Inner loop 2, Deep loop 3.</p>
+<p>Outter loop 3, Inner loop 2, Deep loop 4.</p>
+<p>Outter loop 3, Inner loop 2, Deep loop 5.</p>
+
+<p>Outter loop 3, Inner loop 3, Deep loop 1.</p>
+<p>Outter loop 3, Inner loop 3, Deep loop 2.</p>
+<p>Outter loop 3, Inner loop 3, Deep loop 3.</p>
+<p>Outter loop 3, Inner loop 3, Deep loop 4.</p>
+<p>Outter loop 3, Inner loop 3, Deep loop 5.</p>
+
+<p>Outter loop 3, Inner loop 4, Deep loop 1.</p>
+<p>Outter loop 3, Inner loop 4, Deep loop 2.</p>
+<p>Outter loop 3, Inner loop 4, Deep loop 3.</p>
+<p>Outter loop 3, Inner loop 4, Deep loop 4.</p>
+<p>Outter loop 3, Inner loop 4, Deep loop 5.</p>
+
+</body>
+</html>

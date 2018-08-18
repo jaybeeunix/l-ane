@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="US-ASCII" standalone="yes"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:rpt="http://l-ane.net/l-ane-xml/xmlReporter0">
+
+<rpt:if subject='Constant.0' verb='==' object='Constant.1'><!-- This file is LanePOS/backOffice/xmlReporter/sales-by-customer.xml. It is part of L'ane, thus Copyright 2005 Jason Burrell. --></rpt:if>
+<rpt:promptset>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Sales By Customer/Title' textDefault='Sales By Customer' variable='title' type='fixed'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Sales By Customer/Customer ID' textDefault='Customer ID' variable='id' type='text(20)'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Sales By Customer/Starting Date' textDefault='Starting Date' variable='start' type='date'/>
+   <rpt:prompt textKey='Lane/BackOffice/Reports/Sales By Customer/Ending Date' textDefault='Ending Date' variable='end' type='date'/>
+</rpt:promptset>
+
+<head>
+<title>L&#x2019;&#xe2;ne Sales For Customer: <rpt:output value='UserInterface.start'/> &#x2014; <rpt:output value='UserInterface.end'/></title>
+<style>
+body
+{
+   font-family: Times, Serif;
+   font-size: 12pt;
+   background-color: white;
+   color: black;
+   margin-left: 5%;
+   margin-right: 5%;
+   width: 90%;
+}
+span.descr
+{
+/*   font-style: italic;*/
+   font-weight: bold;
+}
+table.body
+{
+   text-align: right;
+   width: 100%;
+   border-collapse: collapse;
+}
+table.body thead tr td
+{
+   border-style: solid;
+   border-width: thin;
+}
+table.body tbody tr td
+{
+   border-left-style: solid;
+   border-left-width: thin;
+   border-right-style: solid;
+   border-right-width: thin;
+}
+table.body tbody tr td.notes
+{
+   border-left-style: solid;
+   border-left-width: thin;
+   border-right-style: solid;
+   border-right-width: thin;
+   border-top-style: solid;
+   border-top-width: thin;
+   text-align: left;
+}
+table.body tbody tr td.noBorder
+{
+   border-style: none;
+}
+table.body tbody tr.summaryMiddle td
+{
+   border-left-style: solid;
+   border-left-width: thin;
+   border-right-style: solid;
+   border-right-width: thin;
+   border-top-style: hidden;
+   border-bottom-style: hidden;
+}
+table.body tbody tr.summaryBottom td
+{
+   border-left-style: solid;
+   border-left-width: thin;
+   border-right-style: solid;
+   border-right-width: thin;
+   border-top-style: hidden;
+   border-bottom-style: solid;
+   border-bottom-width: thin;
+}
+p.important
+{
+   font-style: normal;
+   font-weight: bold;
+   text-align: center;
+}
+.forceLeft
+{
+   text-align: left;
+}
+</style>
+</head>
+
+<body>
+<h1>Sales For Customer</h1>
+<h2>Report Range: <rpt:output value='UserInterface.start'/> &#x2014; <rpt:output value='UserInterface.end'/></h2>
+<rpt:call object="Customer" method="open" argument0="UserInterface.id" /><rpt:if subject="Reporter.lastCall" verb="==" object="Constant.1">
+<!-- the customer's info -->
+<rpt:call object="Customer" method="getName" /><p><rpt:output value="Customer.id" /><br />
+<rpt:output value="Reporter.lastCall" /><br />
+<rpt:output value="Customer.billAddr1" /><br />
+<rpt:if subject="Customer.billAddr2" verb="ne" object="Constant."><rpt:output value="Customer.billAddr2" /><br /></rpt:if>
+<rpt:output value="Customer.billCity" />, <rpt:output value="Customer.billSt" /> <rpt:output value="Customer.billZip" /><br /><br />
+Phone: <rpt:output value="Customer.billPhone" /></p>
+
+<table width="100%">
+<tr valign="top"><td width="50%">
+</td>
+</tr>
+</table>
+<rpt:call object='Sale' method='getByCustAndRange' argument0='UserInterface.id' argument1='UserInterface.start' argument2='UserInterface.end' context='array'/><rpt:foreach set='Reporter.lastCall' element='ticket'>
+<rpt:call object="Sale" method="open" argument0="ticket.value" /><rpt:if subject="Reporter.lastCall" verb="==" object="Constant.1">
+<!-- the sale info -->
+<hr/>
+<div style="font-weight: bold; background-color: #d3d3d3; color: black; font-size: larger;"><rpt:output value="Sale.id" />
+</div>
+<table width='100%'>
+<tbody>
+<tr>
+<td><span class="descr">Date:</span> <rpt:output value="Sale.tranzDate" format="shortTimestamp" /></td><td><rpt:call object="Clerk" method="open" argument0="Sale.clerk" /><rpt:if subject="Reporter.lastCall" verb="==" object="Constant.1"><span class="descr">Salesperson:</span> <rpt:output value="Clerk.name" /><br /></rpt:if></td>
+<rpt:if subject="Sale.voidAt" verb="istrue"><td><span class="descr">**VOID**</span></td></rpt:if><rpt:if subject="Sale.suspended" verb="istrue"><td><span class="descr">**SUSPENDED**</span></td></rpt:if></tr><tr>
+
+<rpt:if subject="Sale.balance" verb="&gt;" object="Constant.0">
+<!-- calculate the due and discount dates -->
+<rpt:call object="Customer" method="open" argument0="Sale.customer" />
+<rpt:call object="Term" method="open" argument0="Customer.terms" />
+<rpt:call object="Term" method="datesFrom" argument0="Sale.tranzDate" context="array" />
+<span class="descr">Due Date:</span> <rpt:output value="Reporter.1" />
+<rpt:if subject="Term.discDays" verb="&gt;" object="Constant.0"><td><span class="descr">Discount Date:</span> <rpt:output value="Reporter.0" /></td></rpt:if>
+<td><span class="descr">Terms:</span> <rpt:output value="Term.descr" /></td>
+</rpt:if>
+</tr>
+</tbody>
+</table>
+<table class="body">
+<thead>
+<tr><td class="forceLeft"><span class="descr">ID</span></td> <td class="forceLeft"><span class="descr">Description</span></td> <td width="20%"><span class="descr">Qty</span></td> <td width="20%"><span class="descr">Extended</span></td></tr>
+</thead>
+<tbody>
+<!-- the sale body -->
+<!--we need to treat RA-TRANZ, #.*, and :.* items specially-->
+<rpt:foreach set="Sale.items" element="item">
+<rpt:if subject="item.plu" verb="nomatch" object="Constant.^(RA-TRANZ|:.*|#.*)$">
+<tr><td class="forceLeft"><rpt:output value="item.plu" /></td> <td class="forceLeft"><rpt:call object="Product" method="open" argument0="item.plu" /><rpt:if subject="Reporter.lastCall" verb="==" object="Constant.1"><rpt:output value="Product.descr" /></rpt:if></td> <td><rpt:output value="item.qty" /></td> <td><rpt:output value="item.amt" format="money" /></td></tr>
+</rpt:if>
+
+<rpt:if subject="item.plu" verb="match" object="Constant.^:.*$">
+<tr>
+   <td></td>
+   <td class="forceLeft">
+      <rpt:call object="Reporter" method="substr" argument0="item.plu" argument1="Constant.1" argument2="Constant.19" />
+         <rpt:call object="Discount" method="open" argument0="Reporter.lastCall" />
+         <rpt:if subject="Reporter.lastCall" verb="==" object="Constant.1"><rpt:output value="Discount.descr" /></rpt:if>
+   </td>
+   <td></td>
+   <td><rpt:call object="Reporter" method="product" argument0="Constant.-1" argument1="item.amt" /><rpt:output value="Reporter.lastCall" format="money" /></td>
+</tr>
+</rpt:if>
+
+<rpt:if subject="item.plu" verb="match" object="Constant.^RA-TRANZ$">
+<tr><td class="forceLeft"> </td> <td class="forceLeft">Received on Account</td> <td><!-- <rpt:output value="item.qty" /> --></td> <td><rpt:output value="item.amt" format="money" /></td></tr></rpt:if>
+</rpt:foreach>
+
+<!-- notes -->
+<rpt:call object='Reporter' method='length' argument0='Sale.notes'/><rpt:if subject='Reporter.lastCall' verb='&gt;=' object='Constant.1'>
+<tr><td class='notes' colspan='4'><span class='descr'>Notes: </span><div style='margin-left: 5%'><rpt:output value='Sale.notes'/></div></td></tr>
+</rpt:if>
+
+<!-- the sale summary -->
+<tr style="border-top-style: solid; border-top-width: thin;"><td class="noBorder" colspan="2"></td><td class="summaryLeft"><span class="descr">Subtotal:</span></td> <td class="summaryRight"><rpt:output value="Sale.subt" format="money" /></td></tr>
+
+<tr class="sumaryMiddle"><td class="noBorder" colspan="2"></td><td class="summaryLeft"><span class="descr">Taxes:</span></td> <td class="summaryRight"><rpt:output value="Sale.allTaxes" format="money" /></td></tr>
+<tr class="summaryBottom"><td style="border-left-style: hidden; border-bottom-style: hidden;" colspan="2"></td><td class="summaryLeft"><span class="descr">Total:</span></td> <td style="font-weight: bold;" class="summaryRight"><rpt:output value="Sale.total" format="money" /></td></tr>
+<!-- tenders -->
+<rpt:foreach set="Sale.tenders" element="t">
+<rpt:call object="Tender" method="open" argument0="t.tender" /><rpt:if subject='Tender.pays' verb='eq' object='Constant.t'><tr class="summaryBottom"><td style="border-left-style: hidden; border-bottom-style: hidden;" colspan="2"></td><td class="summaryLeft" style="border-top-style: double; "><span class="descr"><rpt:output value="Tender.descr" />:</span></td> <td style="border-top-style: double;" class="summaryRight"><rpt:call object="Reporter" method="product" argument0="Constant.-1" argument1="t.amt" /><rpt:output value="Reporter.lastCall" format="money" /></td></tr></rpt:if>
+</rpt:foreach>
+
+<rpt:if subject="Sale.balance" verb="&gt;" object="Constant.0"><tr class="summaryBottom"><td style="border-left-style: hidden; border-bottom-style: hidden;" colspan="2"></td><td class="summaryLeft" style="border-top-style: double; background-color: #d3d3d3; color: black;"><span class="descr">Net to Pay:</span></td> <td style="font-weight: bold; border-top-style: double; background-color: #d3d3d3; color: black;" class="summaryRight"><rpt:output value="Sale.balance" format="money" /></td></tr>
+<rpt:if subject="Term.discDays" verb="&gt;" object="Constant.0"><tr class="summaryBottom"><td style="border-left-style: hidden; border-bottom-style: hidden;" colspan="2"></td><td class="summaryLeft" style="border-top-style: double; background-color: #d3d3d3; color: black;"><span class="descr">If payment is received on or before <rpt:output value="Reporter.0" />:</span></td> <td style="font-weight: bold; border-top-style: double; background-color: #d3d3d3; color: black;" class="summaryRight"><rpt:call object="Term" method="applyDisc" argument0="Sale.total" /><rpt:call object="Reporter" method="product" argument0="Reporter.lastCall" argument1="Constant.-1" /><rpt:call object="Reporter" method="sum" argument0="Reporter.lastCall" argument1="Sale.balance" /><rpt:output value="Reporter.lastCall" format="money" /></td></tr></rpt:if>
+</rpt:if>
+</tbody>
+</table>
+
+<rpt:if subject="Sale.suspended" verb="eq" object="Constant.t"><h1>This sale is suspended (pending)!</h1>
+</rpt:if>
+</rpt:if>
+</rpt:foreach>
+</rpt:if>
+<rpt:call object='Reporter' method='now' /><p style='font-weight: normal; font-size: smaller;'>Generated by <rpt:output value='Reporter.user'/> @ <rpt:output value='Reporter.now' format='longTimestamp'/></p>
+</body>
+</html>

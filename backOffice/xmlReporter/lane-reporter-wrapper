@@ -1,0 +1,9 @@
+#!/bin/sh
+
+#wrapper
+#This file is part of L'ane. Copyright 2005 Jason Burrell.
+
+File=`basename $1`
+Output=/tmp/$LOGNAME-$File
+Here=`dirname $0`
+umask 006 && "$Here/reporter" "$1" > "$Output" && htmlview "file://$Output"

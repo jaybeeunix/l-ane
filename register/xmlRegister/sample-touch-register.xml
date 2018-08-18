@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE registerinterface SYSTEM "http://ryotous.com/l-ane-xml/lane-xmlRegister-0.dtd">
+<registerinterface>
+  <default>
+    <author contact="http://ryotous.com/">Jason Burrell</author>
+    <creationtimestamp>2003-05-27</creationtimestamp>
+    <font size="18" weight="bold">helvetica</font> <!-- this is the default font -->
+  </default>
+
+  <!-- This is roughly the registerTouch interface. -->
+  
+  <table width="3" height="5">
+    <cell rowspan="3"><receiptbox><font size="12" weight="bold">courier</font></receiptbox></cell>
+    <cell columnspan="2"><infobox><font size="24"/></infobox></cell>
+    <cell columnspan="2"><entry><font size="24">helvetica</font></entry></cell>
+    <!-- this image is just a filler since images aren't (yet) supported -->
+    <cell><image id="filler"/></cell>
+    <cell rowspan="2"><tabpanel columns="6"><font size="12" weight="normal"/></tabpanel></cell>
+    <cell columnspan="2"><keypad><font size="36"/></keypad></cell>
+    <cell columnspan="3"><statusbar><font size="18" slant="italic">helvetica</font></statusbar></cell>
+  </table>
+</registerinterface>

@@ -1,0 +1,192 @@
+<!--
+L'ane XML Register User Interface DTD
+Copyright 2002 Jason Burrell
+  Created: 2003-01-23 jburrell
+ Modified: 2003-06-07 jburrell
+
+$Id: lane-xmlRegister-0.dtd 1040 2009-03-08 21:16:17Z jason $
+
+This file defines the valid syntax for a version 0 L'ane XML RUI file.
+-->
+
+<!-- 
+"registerinterface" is the root element
+Every interface must have exactly one frame (yeah, i know that's screwy).
+-->
+<!ELEMENT registerinterface (default, table)>
+
+<!--
+"default" specifies all-encompassing settings
+forecolor and backcolor are x11 rgb.txt colornames ie "chartreuse1"
+-->
+<!ELEMENT default (author, creationtimestamp, font*)>
+<!ATTLIST default
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+
+<!--
+"author" defines the author of the file,
+it's rendered as a comment in the output file
+contact is a URI to the author, ie
+  mailto:username@mailhost.com
+  phone:1-217-555-1212
+  http://my-home-page.com/
+-->
+<!ELEMENT author (#PCDATA)>
+<!ATTLIST author
+contact CDATA #IMPLIED
+>
+<!--
+"creationtimestamp" defines a date or date timestamp when the file was last modifed
+it's rendered as a comment in the output file
+YOU MAY ONLY USE ISO DATE FORMATS!!! ie: 2003-01-28
+-->
+<!ELEMENT creationtimestamp (#PCDATA)>
+
+<!--
+"font" defines a font (used by graphical renderers)
+the tag should surround the font-family-name ie <font>courier</font>
+encoding is the registry and encoding ie "ISO8859-15"
+resolution is the resolution of the font ie "75" or "100"
+slant is the slant of the font "normal", "italic", "oblique"
+weight is the weight of the font "regular", "medium", "bold"
+size is the size of the font in points (roughly) "12", "18"
+-->
+<!ELEMENT font (#PCDATA)>
+<!ATTLIST font
+encoding NMTOKEN "ISO8859-1"
+resolution CDATA "75"
+slant CDATA "normal"
+weight CDATA "regular"
+size CDATA "12"
+>
+
+<!--
+"table" contains everything else, it's somewhat like an html table
+width is the width of the table, in cells
+height is the height of the table in cells
+-->
+<!ELEMENT table (cell*)>
+<!ATTLIST table
+width CDATA "1"
+height CDATA "1"
+>
+
+<!--
+"cell"s define the cells
+WE DON'T SUPPORT NESTED TABLES!!!
+columnspan is the number of cells this cell spans horizontally
+rowspan is the number of cells this cells spans vertically
+-->
+<!ELEMENT cell (entry | infobox | summarybox | receiptbox | statusbar | tabpanel | keypad | image)>
+<!ATTLIST cell
+columnspan CDATA "1"
+rowspan CDATA "1"
+>
+<!--
+"entry"ies accept text input
+every register needs exactly one entry
+-->
+<!ELEMENT entry (font?)>
+<!ATTLIST entry
+width CDATA #IMPLIED
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+
+<!--
+"infobox"es can specify the width and height,
+typically in characters
+-->
+<!ELEMENT infobox (font?)>
+<!ATTLIST infobox
+width CDATA #IMPLIED
+height CDATA #IMPLIED
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+<!--
+"summarybox"es can specify the width and height,
+typically in characters
+-->
+<!ELEMENT summarybox (font?)>
+<!ATTLIST summarybox
+width CDATA #IMPLIED
+height CDATA #IMPLIED
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+<!--
+"receiptbox"es can specify the width and height,
+typically in characters
+-->
+<!ELEMENT receiptbox (font?)>
+<!ATTLIST receiptbox
+width CDATA #IMPLIED
+height CDATA #IMPLIED
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+
+<!--
+"statusbar"s show the clerk name, date, and time
+-->
+<!ELEMENT statusbar (font?)>
+<!ATTLIST statusbar
+<!-- width CDATA #IMPLIED -->
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>
+
+<!--
+"tabpanel"s display the info in a notebook tabbed panel area
+this item is from registerTouch, as such, it's only usable from
+touch screens
+-->
+<!ELEMENT tabpanel (font?)>
+<!ATTLIST tabpanel
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+columns CDATA #IMPLIED
+>
+
+<!--
+"keypad"s show buttons that take the place of a keyboard's keypad
+this item is from registerTouch, as such, it's only usable from
+touch screens
+-->
+<!ELEMENT keypad (font?)>
+<!ATTLIST keypad
+numfore CDATA #IMPLIED
+numback CDATA #IMPLIED
+yesfore CDATA #IMPLIED
+yesback CDATA #IMPLIED
+nofore CDATA #IMPLIED
+noback CDATA #IMPLIED
+clearfore CDATA #IMPLIED
+clearback CDATA #IMPLIED
+bkspfore CDATA #IMPLIED
+bkspback CDATA #IMPLIED
+qtyfore CDATA #IMPLIED
+qtyback CDATA #IMPLIED
+negfore CDATA #IMPLIED
+negback CDATA #IMPLIED
+enterfore CDATA #IMPLIED
+enterback CDATA #IMPLIED
+>
+
+<!--
+"image"s allow graphical interfaces to show an image
+this is only the container, it must be filled with calls
+from the register (usually in register-initMachine-*)
+id is used to refer to multiple image containers
+-->
+<!ELEMENT image (font?)>
+<!ATTLIST image
+id CDATA #IMPLIED
+width CDATA #IMPLIED
+height CDATA #IMPLIED
+forecolor CDATA #IMPLIED
+backcolor CDATA #IMPLIED
+>

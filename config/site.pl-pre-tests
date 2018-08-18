@@ -1,0 +1,4 @@
+$ENV{'LaneDSN'} = 'dbname=lanetest';
+$ENV{'LaneLang'} = 'en-US';
+#$ENV{'LaneDebug'} = 'moneyFmt()';
+$ENV{'PGCLIENTENCODING'} = 'LATIN9';

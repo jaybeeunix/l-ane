@@ -1,0 +1,1365 @@
+#!/usr/bin/perl -w
+
+#LaneBMS/programs/vendors
+#Copyright 2003-2010 Jason Burrell
+#Copyright 2000-2002 Burrell Business Systems
+
+#this is the vendors module
+#$Id: vendors 1198 2010-10-24 18:26:03Z jason $
+
+#need to lock some flds after creation (dates, balance, crdtrmn, etc.)
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+#lbms
+use LanePOS::Vendor;
+use LanePOS::Term;
+use LanePOS::Tax;
+use LanePOS::Locale; #ooh, we're heading for i18n now!
+use LanePOS::SysString;
+
+######################################################################################################################
+#this allows the admin to lock certain priviledged flds, such as balance. These flds should only be updated internally.
+#
+#the following flds are locked when $lockFlds is true:
+#balance, creditRmn, lastSale, lastPay
+#$lockFlds = 1;
+$lockFlds = 0;
+
+#NOTE: this code isn't heavily tested, so be careful.
+
+######################################################################################################################
+
+$cust = new Vendor;
+$term = new Term;
+$tax = new Tax;
+$lc = new Locale;
+$sysStr = new SysString;
+@items = $term->getAll;
+@taxes = $tax->getAllDescr;
+
+$isNew = 0;			# allow access to "locked" fields if true
+$isSaved = 0;
+$termsText = $lc->get('Lane/BackOffice/Select');
+$SearchTxt = '';		# allows it to show last given text
+
+# Sample SpecTcl main program for testing GUI
+use Tk;
+require Tk::Menu;
+my($top) = MainWindow->new();
+$top->title('L\'ane: ' . $lc->get('Lane/BackOffice/Vendors'));
+
+#generic initialization stuff
+$defaultCountry = '';
+if($sysStr->open('company-customer-id'))
+{
+    my $c = Vendor->new;
+    if($c->open($sysStr->{'data'}))
+    {
+	$defaultCountry = $c->{'billCountry'};
+    }
+}
+$defaultCountry = 'us' if ! $defaultCountry;
+
+#this appears to at least trigger the entId->focus bug, so i'll have to find another way
+########################################################################################
+$top->bind(Tk::Entry, '<KeyRelease>', sub { # turns off $isSaved if the user types something
+    #it wouldn't do anything when i bound to <Key> or <KeyPress>. don't know why
+    $isSaved = 0;
+});
+
+sub updateLockedFlds {
+    my ($lockNow) = @_;
+    if($lockFlds)
+    {
+	#this sets or releases the locks based on the the value of $lockFlds
+	#unfortunately, the flds must be global for me to change them here
+	my $lockColor = 'pink3';
+	my $unlockColor = $entId->cget(-background); # this isn't the best, but it works
+	my $color2 = $entId->cget(-foreground);
+	my $colorVal;
+	my $lockState = 'disabled';
+	my $unlockState = 'normal';
+	my $stateVal;
+	if($lockNow)
+	{
+	    $colorVal = $lockColor;
+	    $stateVal = $lockState;
+	}
+	else
+	{
+	    $colorVal = $unlockColor;
+	    $stateVal = $unlockState;
+	}
+	#from customerAccounting_ui()
+#	$mnuCustType->configure(
+#				-state => $stateVal,
+#				-background => $colorVal,
+#				-disabledforeground => $color2,
+#			       );
+	$mnuTerms->configure(
+				-state => $stateVal,
+				-background => $colorVal,
+				-disabledforeground => $color2,
+			       );
+	$frmTaxes->configure(
+				-state => $stateVal,
+				-background => $colorVal,
+				-disabledforeground => $color2,
+			       );
+	$entCreditLmt->configure(
+				 -state => $stateVal,
+				 -background => $colorVal,
+			       );
+	$entBalance->configure(
+			       -state => $stateVal,
+			       -background => $colorVal,
+			       );
+	$entCreditRmn->configure(
+				 -state => $stateVal,
+				 -background => $colorVal,
+				 );
+	$entLastSale->configure(
+				-state => $stateVal,
+				-background => $colorVal,
+				);
+	$entLastPay->configure(
+			       -state => $stateVal,
+			       -background => $colorVal,
+			       );
+    }
+	
+}
+
+sub askToSave {			# rtns f-0 if 'Discard/No', t-1 if 'Saved/Yes'
+    #prompt w/a popup window:
+    # "This record is not saved. Do you want a chance to save your changes?"
+    # Yes (chance to save) -  No (discard)
+
+    #askToSave doesn't work how it should
+    #so, i've disabled it
+    return 0;
+
+    require Tk::DialogBox;
+    my $yes = $lc->get('Lane/BackOffice/Buttons/Yes');
+    my $popupWin = $top->DialogBox(
+		       -title => $lc->get('Lane/BackOffice/Confirmation'),
+		       -buttons => [$yes, $lc->get('Lane/BackOffice/Buttons/No, Discard')]
+		  );
+    $popupWin->add(Label, -text => $lc->get('Lane/BackOffice/Save Prompt'))->pack();
+#    $popupWin->add(Label, -text => "(Selecting 'Yes' only cancels the previous operation.)")->pack();
+
+    if($popupWin->Show eq $yes)
+    {
+	$popupWin->destroy;
+	return 1;
+    }
+    $popupWin->destroy;
+    return 0;			# didn't want to save
+}
+
+sub selectPopup {
+    #$dbVar is the db variable (ie $cust->{'terms'})
+    #$obj is the obj's ref (ie $term)
+    #$mnuTxt is the variable that holds the menubutton's text
+    my ($dbVar, $obj, $mnuTxt) = @_;
+    my @items = $obj->getAll;	# make sure we have them all
+    for(my $i = 0; $i <= $#items; $i++)
+    {
+	if($items[$i]->[1] eq $dbVar)
+	{
+	    $$mnuTxt = $items[$i]->[0];
+	    return 1;
+	}
+    }
+    $$mnuTxt =  'Unknown value';
+    return 0;
+}
+
+sub openShow {
+    my $id = shift;
+
+    if($cust->open($id))
+    {
+	#update the special flds
+
+	#the menubuttons
+	&selectPopup($cust->{'terms'}, $term, \$termsText);
+	#the notes fld is updated on <Visibility>, so i don't care about it here
+	$isSaved = 1;		# it already exists, so it is already saved
+	&updateLockedFlds(1);	# lock the flds, since this is an existing vendor
+	$txtNotes->delete('1.0', 'end');
+	$txtNotes->insert('end', $cust->{'notes'});
+	$frmTaxes->updateButtons;
+    }
+    else
+    {
+	&newRec;
+    }
+}
+
+sub newRec {
+    unless($isSaved)
+    {
+	if(&askToSave)		# ask user if he/she wants to save
+	{
+	    #the user wants to save the file first
+	    return;
+	}
+    }
+    #either user didn't want to save, or it was already saved
+
+    #clear the flds
+    $cust->{'id'} = $cust->{'coName'} = $cust->{'cntFirst'} = $cust->{'cntLast'} = $cust->{'billAddr1'} = $cust->{'billAddr2'} = $cust->{'billCity'} = $cust->{'billSt'} = $cust->{'billZip'} = $cust->{'billCountry'} = $cust->{'billPhone'} = $cust->{'billFax'} = $cust->{'shipAddr1'} = $cust->{'shipAddr2'} = $cust->{'shipCity'} = $cust->{'shipSt'} = $cust->{'shipZip'} = $cust->{'shipCountry'} = $cust->{'shipPhone'} = $cust->{'shipFax'} = $cust->{'email'} = $cust->{'lastSale'} = $cust->{'lastPay'} = $cust->{'notes'} = $cust->{'creator'} = $cust->{'creationDate'} = '';
+    #set these to default vals
+    $cust->{'creditLmt'} = $cust->{'balance'} = $cust->{'creditRmn'} = "0.00";
+    $cust->{'taxes'} = 0;
+    $termsText = $lc->get('Lane/BackOffice/Select');
+    $frmTaxes->updateButtons;
+#    $cust->{'custType'} = $cust->{'custTypes'}[0];
+    
+    $cust->{'billCountry'} = $cust->{'shipCountry'} = $defaultCountry;
+    #reset the Notes fld
+    $txtNotes->delete('1.0', 'end');
+
+    #attempt at making entId->focus
+    $notebook->raise('Bill');
+    #attempt end
+
+    #since it is new, it isn't saved
+    $isNew = 1;
+#    $isSaved = 0; #this is set by the master bind <KeyRelease> above
+    #update the locks
+    &updateLockedFlds(0);	# this is new, so unlock them
+    #move to the default fld
+    $entId->focus;
+}
+
+sub smallMenuSelect {
+    #$var is the variable for the textbox/db fld
+    #$newVal is the new value for it
+
+    #I realize this is simple
+    my ($var, $newVal) = @_;
+
+    $$var = $newVal;
+}
+
+sub menuSelect {
+    #$var is a ref to the db fld
+    #$list is the list of menu items
+    #$i is the menu item selected
+    #$dispVar is the var that holds the displayed value, or undef if not used
+    my ($var, $list, $position, $dispVar) = @_;
+    
+    $$var = $list->[$position]->[1];
+    if($dispVar)
+    {
+	$$dispVar = $list->[$position]->[0];
+    }
+}
+
+#########################################################
+# generated code from SpecPerl (mostly, although some is
+# hand tweaked
+
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LanePOS-0.1.1/specPerl.ui.files/vendorsShipAddr.ui
+# For use with Tk402.002, using the grid geometry manager
+
+sub customersShipAddr_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($bSameAsBilling) = $root->Button (
+		-text => $lc->get('Lane/Customer/Same As Billing'),
+	);
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping Address 1'),
+	);
+	my($entAddr1) = $root->Entry (
+		-textvariable => \$cust->{'shipAddr1'},
+		-width => '40',
+	);
+	my($entAddr2) = $root->Entry (
+		-textvariable => \$cust->{'shipAddr2'},
+		-width => '40',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping City'),
+	);
+	my($entCity) = $root->Entry (
+		-textvariable => \$cust->{'shipCity'},
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping State'),
+	);
+	my($entSt) = $root->Entry (
+		-textvariable => \$cust->{'shipSt'},
+		-width => '3',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping Zip'),
+	);
+	my($entZip) = $root->Entry (
+		-textvariable => \$cust->{'shipZip'},
+		-width => '11',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping Country'),
+	);
+	my($entCountry) = $root->Entry (
+		-textvariable => \$cust->{'shipCountry'},
+		-width => '3',
+	);
+	my($label_6) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping Phone'),
+	);
+	my($entPhone) = $root->Entry (
+		-textvariable => \$cust->{'shipPhone'},
+		-width => '16',
+	);
+	my($label_7) = $root->Label (
+		-text => $lc->get('Lane/Customer/Shipping Fax'),
+	);
+	my($entFax) = $root->Entry (
+		-textvariable => \$cust->{'shipFax'},
+		-width => '16',
+	);
+
+	# widget commands
+
+	$bSameAsBilling->configure(
+		-command => sub {
+		    #copy billAddr vals to shipAddr vals
+		    $cust->{'shipAddr1'} = $cust->{'billAddr1'};
+		    $cust->{'shipAddr2'} = $cust->{'billAddr2'};
+		    $cust->{'shipCity'} = $cust->{'billCity'};
+		    $cust->{'shipSt'} = $cust->{'billSt'};
+		    $cust->{'shipZip'} = $cust->{'billZip'};
+		    $cust->{'shipCountry'} = $cust->{'billCountry'};
+		    $cust->{'shipPhone'} = $cust->{'billPhone'};
+		    $cust->{'shipFax'} = $cust->{'billFax'};
+		}
+	);
+
+	# Geometry management
+
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entAddr1->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-columnspan => '5',
+		-sticky => 'w'
+	);
+	$bSameAsBilling->grid(
+		-in => $root,
+		-column => '7',
+		-row => '1',
+		-columnspan => '2',
+		-sticky => 'e'
+	);
+	$entAddr2->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-columnspan => '5',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCity->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '3',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entSt->grid(
+		-in => $root,
+		-column => '4',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '5',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entZip->grid(
+		-in => $root,
+		-column => '6',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '7',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCountry->grid(
+		-in => $root,
+		-column => '8',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_6->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entPhone->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$label_7->grid(
+		-in => $root,
+		-column => '3',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entFax->grid(
+		-in => $root,
+		-column => '4',
+		-row => '4',
+		-columnspan => '3',
+		-sticky => 'w'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(5, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(6, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(7, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(8, -weight => 0, -minsize => 30);
+
+	# additional interface code
+	$entAddr1->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entAddr1->bind('<FocusOut>', sub {
+	    $cust->{'shipAddr1'} = sprintf "%.40s", $cust->{'shipAddr1'};
+	});
+	$entAddr2->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entAddr2->bind('<FocusOut>', sub {
+	    $cust->{'shipAddr2'} = sprintf "%.40s", $cust->{'shipAddr2'};
+	});
+	$entCity->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCity->bind('<FocusOut>', sub {
+	    $cust->{'shipCity'} = sprintf "%.35s", $cust->{'shipCity'};
+	});
+	$entSt->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entSt->bind('<FocusOut>', sub {
+	    $cust->{'shipSt'} = sprintf "%.2s", $cust->{'shipSt'};
+	});
+	$entZip->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entZip->bind('<FocusOut>', sub {
+	    $cust->{'shipZip'} = sprintf "%.10s", $cust->{'shipZip'};
+	});
+	$entCountry->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCountry->bind('<FocusOut>', sub {
+	    $cust->{'shipCountry'} = sprintf "%.2s", $cust->{'shipCountry'};
+	});
+	$entPhone->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entPhone->bind('<FocusOut>', sub {
+	    $cust->{'shipPhone'} = sprintf "%.15s", $cust->{'shipPhone'};
+	});
+	$entFax->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entFax->bind('<FocusOut>', sub {
+	    $cust->{'shipFax'} = sprintf "%.15s", $cust->{'shipFax'};
+	});
+
+	# end additional interface code
+}
+
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LanePOS-0.1.1/specPerl.ui.files/customersAddr.ui
+# For use with Tk402.002, using the grid geometry manager
+
+sub customersBillAddr_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing Address 1'),
+	);
+	my($entAddr1) = $root->Entry (
+		-textvariable => \$cust->{'billAddr1'},
+		-width => '40',
+	);
+	my($entAddr2) = $root->Entry (
+		-textvariable => \$cust->{'billAddr2'},
+		-width => '40',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing City'),
+	);
+	my($entCity) = $root->Entry (
+		-textvariable => \$cust->{'billCity'},
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing State'),
+	);
+	my($entSt) = $root->Entry (
+		-textvariable => \$cust->{'billSt'},
+		-width => '3',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing Zip'),
+	);
+	my($entZip) = $root->Entry (
+		-textvariable => \$cust->{'billZip'},
+		-width => '11',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing Country'),
+	);
+	my($entCountry) = $root->Entry (
+		-textvariable => \$cust->{'billCountry'},
+		-width => '3',
+	);
+	my($label_6) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing Phone'),
+	);
+	my($entPhone) = $root->Entry (
+		-textvariable => \$cust->{'billPhone'},
+		-width => '16',
+	);
+	my($label_7) = $root->Label (
+		-text => $lc->get('Lane/Customer/Billing Fax'),
+	);
+	my($entFax) = $root->Entry (
+		-textvariable => \$cust->{'billFax'},
+		-width => '16',
+	);
+
+	# Geometry management
+
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entAddr1->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-columnspan => '5',
+		-sticky => 'w'
+	);
+	$entAddr2->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-columnspan => '5',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCity->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '3',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entSt->grid(
+		-in => $root,
+		-column => '4',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '5',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entZip->grid(
+		-in => $root,
+		-column => '6',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '7',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCountry->grid(
+		-in => $root,
+		-column => '8',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_6->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entPhone->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$label_7->grid(
+		-in => $root,
+		-column => '3',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entFax->grid(
+		-in => $root,
+		-column => '4',
+		-row => '4',
+		-columnspan => '3',
+		-sticky => 'w'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(5, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(6, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(7, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(8, -weight => 0, -minsize => 30);
+
+	# additional interface code
+	$entAddr1->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entAddr1->bind('<FocusOut>', sub {
+	    $cust->{'billAddr1'} = sprintf "%.40s", $cust->{'billAddr1'};
+	});
+	$entAddr2->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entAddr2->bind('<FocusOut>', sub {
+	    $cust->{'billAddr2'} = sprintf "%.40s", $cust->{'billAddr2'};
+	});
+	$entCity->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCity->bind('<FocusOut>', sub {
+	    $cust->{'billCity'} = sprintf "%.35s", $cust->{'billCity'};
+	});
+	$entSt->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entSt->bind('<FocusOut>', sub {
+	    $cust->{'billSt'} = sprintf "%.2s", $cust->{'billSt'};
+	});
+	$entZip->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entZip->bind('<FocusOut>', sub {
+	    $cust->{'billZip'} = sprintf "%.10s", $cust->{'billZip'};
+	});
+	$entCountry->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCountry->bind('<FocusOut>', sub {
+	    $cust->{'billCountry'} = sprintf "%.2s", $cust->{'billCountry'};
+	});
+	$entPhone->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entPhone->bind('<FocusOut>', sub {
+	    $cust->{'billPhone'} = sprintf "%.15s", $cust->{'billPhone'};
+	});
+	$entFax->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entFax->bind('<FocusOut>', sub {
+	    $cust->{'billFax'} = sprintf "%.15s", $cust->{'billFax'};
+	});
+
+	# end additional interface code
+}
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LanePOS-0.1.1/specPerl.ui.files/customersNotes.ui
+# For use with Tk402.002, using the grid geometry manager
+
+sub customersNotes_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	$txtNotes = $root->Text (
+		-font => '-*-Helvetica-Medium-R-Normal-*-*-120-*-*-*-*-*-*',
+		-height => '4',
+		-width => '50',
+		-wrap => 'word',
+	);
+
+	# Geometry management
+
+	$txtNotes->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'nesw'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+
+	# additional interface code
+
+	#should this be <Expose> instead of <Visibility>
+	#$txtNotes->bind('<Expose>', sub {});
+
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from /burrell/LanePOS-0.1.1/specPerl.ui.files/customersAccounting.ui
+# For use with Tk402.002, using the grid geometry manager
+
+sub customersAccounting_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/Customer/Account Terms'),
+	);
+	$mnuTerms = $root->Menubutton (
+		-direction => 'flush',
+		-indicatoron => '1',
+		-relief => 'raised',
+		-textvariable => \$termsText,
+		-tearoff => '0',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Customer/Credit Limit'),
+	);
+	$entCreditLmt = $root->Entry (
+		-justify => 'right',
+		-textvariable => \$cust->{'creditLmt'},
+		-width => '15',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Customer/Taxes'),
+	);
+	use Tk::Bitcheckbutton;
+	$frmTaxes = $root->Bitcheckbutton(-variable => \$cust->{'taxes'}, -bititems => \@taxes);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Customer/Balance'),
+	);
+	$entBalance = $root->Entry (
+		-justify => 'right',
+		-textvariable => \$cust->{'balance'},
+		-width => '15',
+	);
+#	my($label_3) = $root->Label (
+#		-text => $lc->get('Lane/Customer/Customer Type'),
+#	);
+#	$mnuCustType = $root->Menubutton (
+#		-direction => 'flush',
+#		-indicatoron => '1',
+#		-relief => 'raised',
+#		-textvariable => \$cust->{'custType'},
+#		-tearoff => '0',
+#	);
+	my($label_6) = $root->Label (
+		-text => $lc->get('Lane/Customer/Credit Remaining'),
+	);
+	$entCreditRmn = $root->Entry (
+		-justify => 'right',
+		-textvariable => \$cust->{'creditRmn'},
+		-width => '15',
+	);
+	my($label_7) = $root->Label (
+		-text => $lc->get('Lane/Customer/Last Sale'),
+	);
+	$entLastSale = $root->Entry (
+		-textvariable => \$cust->{'lastSale'},
+		-width => '11',
+	);
+	my($label_8) = $root->Label (
+		-text => $lc->get('Lane/Customer/Last Payment'),
+	);
+	$entLastPay = $root->Entry (
+		-textvariable => \$cust->{'lastPay'},
+		-width => '11',
+	);
+
+	# Geometry management
+
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$mnuTerms->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '3',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entCreditLmt->grid(
+		-in => $root,
+		-column => '4',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$frmTaxes->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '3',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$entBalance->grid(
+		-in => $root,
+		-column => '4',
+		-row => '2',
+		-sticky => 'w'
+	);
+#	$label_3->grid(
+#		-in => $root,
+#		-column => '1',
+#		-row => '3',
+#		-sticky => 'e'
+#	);
+#	$mnuCustType->grid(
+#		-in => $root,
+#		-column => '2',
+#		-row => '3',
+#		-sticky => 'w'
+#	);
+	$label_6->grid(
+		-in => $root,
+		-column => '3',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCreditRmn->grid(
+		-in => $root,
+		-column => '4',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_7->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entLastSale->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$label_8->grid(
+		-in => $root,
+		-column => '3',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entLastPay->grid(
+		-in => $root,
+		-column => '4',
+		-row => '4',
+		-sticky => 'w'
+	);
+
+	# Resize behavior management
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+
+	# additional interface code
+
+	$entCreditLmt->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCreditLmt->bind('<FocusOut>', sub {
+	    $cust->{'creditLmt'} = sprintf "%.2f", $cust->{'creditLmt'};
+	});
+	$entBalance->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entBalance->bind('<FocusOut>', sub {
+	    $cust->{'balance'} = sprintf "%.2f", $cust->{'balance'};
+	});
+	$entCreditRmn->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCreditRmn->bind('<FocusOut>', sub {
+	    $cust->{'creditRmn'} = sprintf "%.2f", $cust->{'creditRmn'};
+	});
+	$entLastSale->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entLastSale->bind('<FocusOut>', sub {
+	    if($cust->{'lastSale'} =~ s{/}{-}g and $cust->{'lastSale'} !~ /^\d{2}-\d{2}-\d{4}$/)	# make sure it is in us format
+	    {
+		$entLastSale->bell;
+		$cust->{'lastSale'} = '00-00-0000';
+	    }
+	});
+	$entLastPay->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entLastPay->bind('<FocusOut>', sub {
+	    if($cust->{'lastPay'} =~ s{/}{-}g and $cust->{'lastPay'} !~ /^\d{2}-\d{2}-\d{4}$/)	# make sure it is in us format
+	    {
+		$entLastPay->bell;
+		$cust->{'lastPay'} = '00-00-0000';
+	    }
+	});
+        #menu builders
+        #build the menus
+        #terms
+	for(my $i = 0; $i <= $#items; $i++)
+	{
+	    $mnuTerms->command(-label => "$items[$i]->[0]",
+			       -command => [ \&menuSelect, \$cust->{'terms'}, \@items, $i, \$termsText]
+			       );
+	}
+#	#custType
+#	for(my $i = 0; $i <= $#{$cust->{'custTypes'}}; $i++)
+#	{
+#	    $mnuCustType->command(-label => $cust->{'custTypes'}[$i],
+#				  -command => [ \&smallMenuSelect, \$cust->{'custType'}, $cust->{'custTypes'}[$i]]
+#				  );
+#	}
+
+  #endofmenubuilders
+	# end additional interface code
+}
+
+# interface generated by SpecTcl (Perl enabled) version 1.1 
+# from customers.ui
+# For use with Tk402.002, using the grid geometry manager
+sub customers_ui {
+	my($root) = @_;
+
+	# widget creation 
+
+	my($label_1) = $root->Label (
+		-text => $lc->get('Lane/GenericObject/ID'),
+	);
+	$entId = $root->Entry (
+		-textvariable => \$cust->{'id'},
+		-width => '16',
+	);
+	my($label_2) = $root->Label (
+		-text => $lc->get('Lane/Customer/Company Name'),
+	);
+	my($entCompany) = $root->Entry (
+		-textvariable => \$cust->{'coName'},
+		-width => '42',
+	);
+	my($label_3) = $root->Label (
+		-text => $lc->get('Lane/Customer/Contact Given Name'),
+	);
+	my($entCntFirst) = $root->Entry (
+		-textvariable => \$cust->{'cntFirst'},
+		-width => '20',
+	);
+	my($label_4) = $root->Label (
+		-text => $lc->get('Lane/Customer/Contact Family Name'),
+	);
+	my($entCntLast) = $root->Entry (
+		-textvariable => \$cust->{'cntLast'},
+	        -width => '20',
+	);
+	my($label_5) = $root->Label (
+		-text => $lc->get('Lane/Customer/Email'),
+	);
+	my($entEmail) = $root->Entry (
+		-textvariable => \$cust->{'email'},
+                -width => '20',
+	);
+	my($frmNotebook) = $root->Frame (
+	);
+	my($frmButtons) = $root->Frame (
+	);
+	my($bProcess) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Process'),
+	);
+	my($bSearchByName) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Search'),
+	);
+	my($bNew) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/New'),
+	);
+	my($bRemove) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Remove'),
+	);
+	my($bQuit) = $root->Button (
+		-text => $lc->get('Lane/BackOffice/Buttons/Quit'),
+	);
+
+	# widget commands
+
+	$bProcess->configure(
+		-command => sub {
+		    #make sure all of the important flds are filled in
+		    if($cust->{'terms'} eq '')
+		    {
+			return;
+		    }
+		    #get the note info
+		    $cust->{'notes'} = sprintf "%.250s", $txtNotes->get('1.0', 'end'); 
+		    $cust->save;
+		    $isSaved = 1;
+		    &newRec;
+		}
+	);
+	$bSearchByName->configure(
+		-command => sub {
+		    #popup a win to ask for text
+		    #show search results in a window
+		    require Tk::DialogBox;
+		    my $searchWin = $root->DialogBox(
+		       -title => $lc->get('Lane/BackOffice/Buttons/Search'),
+		       -buttons => [
+				    $lc->get('Lane/BackOffice/Buttons/Search'),
+				    $lc->get('Lane/BackOffice/Buttons/Cancel')
+				    ]
+		  );
+
+		    $searchWin->add(Label, -text => $lc->get('Lane/Customer/Search Prompt'))->pack();
+		    $searchWin->add(Entry, -textvariable => \$SearchTxt,
+				    -width => '30')->pack();
+		    if($searchWin->Show eq $lc->get('Lane/BackOffice/Buttons/Search'))
+		    {
+			my @findings = $cust->searchByName($SearchTxt);
+			if((ref $findings[0]) eq 'HASH') # it found something
+			{	# if it didn't find anything ref would be ARRAY
+			    #show the search results box
+			    my $foundWin = $root->DialogBox(
+				-title => $lc->get('Lane/BackOffice/Search Results'),
+				-buttons => [$lc->get('Lane/BackOffice/Buttons/OK'),
+					     $lc->get('Lane/BackOffice/Buttons/Cancel')]);
+			    $foundWin->add(Label, -text => $lc->get('Lane/BackOffice/Search Results Text'))->pack();
+			    my $fndScroll = $foundWin->add(Scrollbar);
+			    my $fndList = $foundWin->add(Listbox, -width => '0', -yscrollcommand => ['set' => $fndScroll]);
+			    $fndScroll->configure(-command => ['yview' => $fndList]);
+			    $fndScroll->pack(-side => 'right', -fill => 'y');
+			    $fndList->pack(-side => 'left', -fill => 'both', -expand => '1');
+			    for(my $i = 0; $i <= $#findings; ++$i)
+			    {	# populate the list of findings
+				$fndList->insert('end', $findings[$i]->{'coName'} . " (" . $findings[$i]->{'cntFirst'} . " " . $findings[$i]->{'cntLast'} . ")");
+			    }
+			    if($foundWin->Show eq $lc->get('Lane/BackOffice/Buttons/OK'))
+			    {	# the user picked something (maybe)
+				my @selected = $fndList->curselection;
+				&openShow($findings[$selected[0]]->{'id'});
+				$entId->focus;
+			    }
+			    $foundWin->destroy;
+		        }
+		    } 
+		    $searchWin->destroy;		    
+		}
+	);
+	$bNew->configure(
+		-command => sub {&newRec;}
+	);
+	$bRemove->configure(
+		-command => sub {
+		    require Tk::DialogBox;
+		    my $yes = $lc->get('Lane/BackOffice/Buttons/Yes, Remove');
+		    my $popupWin = $top->DialogBox(
+						   -title => $lc->get('Lane/BackOffice/Confirmation'),
+						   -buttons => [$lc->get('Lane/BackOffice/Buttons/No, Cancel'), $yes]
+						   );
+		    $popupWin->add(Label, -text => $lc->get('Lane/BackOffice/Remove Prompt'))->pack();
+		    $popupWin->add(Label, -text => "[$cust->{'id'}, " . $cust->getName . "]")->pack();
+		    
+		    if($popupWin->Show eq $yes)
+		    {
+			$popupWin->destroy;
+			$cust->remove;
+			$isSaved = 1; # to trick newRec
+			&newRec;
+		    }
+		    else
+		    {
+			$popupWin->destroy;
+		    }
+		    
+		}
+	);
+	$bQuit->configure(
+		-command => sub { if($isSaved)
+				  {
+				      exit;
+				  }
+				  if(&askToSave)
+				  {
+				      return; # user wants a chance to save
+				  }
+				  exit; #discard selected
+			     }
+	);
+
+	# Geometry management
+
+	$frmButtons->grid(
+		-in => $root,
+		-column => '2',
+		-row => '6',
+		-columnspan => '3',
+		-sticky => 'e'
+	);
+	$frmNotebook->grid(
+		-in => $root,
+		-column => '1',
+		-row => '5',
+		-columnspan => '4'
+	);
+	$label_1->grid(
+		-in => $root,
+		-column => '1',
+		-row => '1',
+		-sticky => 'e'
+	);
+	$entId->grid(
+		-in => $root,
+		-column => '2',
+		-row => '1',
+		-sticky => 'w'
+	);
+	$label_2->grid(
+		-in => $root,
+		-column => '1',
+		-row => '2',
+		-sticky => 'e'
+	);
+	$entCompany->grid(
+		-in => $root,
+		-column => '2',
+		-row => '2',
+		-columnspan => '3',
+		-sticky => 'w'
+	);
+	$label_3->grid(
+		-in => $root,
+		-column => '1',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCntFirst->grid(
+		-in => $root,
+		-column => '2',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_4->grid(
+		-in => $root,
+		-column => '3',
+		-row => '3',
+		-sticky => 'e'
+	);
+	$entCntLast->grid(
+		-in => $root,
+		-column => '4',
+		-row => '3',
+		-sticky => 'w'
+	);
+	$label_5->grid(
+		-in => $root,
+		-column => '1',
+		-row => '4',
+		-sticky => 'e'
+	);
+	$entEmail->grid(
+		-in => $root,
+		-column => '2',
+		-row => '4',
+		-sticky => 'w'
+	);
+	$bProcess->grid(
+		-in => $frmButtons,
+		-column => '1',
+		-row => '1'
+	);
+	$bSearchByName->grid(
+		-in => $frmButtons,
+		-column => '2',
+		-row => '1'
+	);
+	$bNew->grid(
+		-in => $frmButtons,
+		-column => '3',
+		-row => '1'
+	);
+	$bRemove->grid(
+		-in => $frmButtons,
+		-column => '4',
+		-row => '1'
+	);
+	$bQuit->grid(
+		-in => $frmButtons,
+		-column => '5',
+		-row => '1'
+	);
+
+	# Resize behavior management
+
+	# container $frmButtons (rows)
+	$frmButtons->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+
+	# container $frame_2 (columns)
+	$frmButtons->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$frmButtons->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$frmButtons->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$frmButtons->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+	$frmButtons->gridColumnconfigure(5, -weight => 0, -minsize => 30);
+
+	# container $root (rows)
+	$root->gridRowconfigure(1, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(2, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(3, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(4, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(5, -weight  => 0, -minsize  => 30);
+	$root->gridRowconfigure(6, -weight  => 0, -minsize  => 30);
+
+	# container $root (columns)
+	$root->gridColumnconfigure(1, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(2, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(3, -weight => 0, -minsize => 30);
+	$root->gridColumnconfigure(4, -weight => 0, -minsize => 30);
+
+	# additional interface code
+
+	#for the tabbed notebook
+	use Tk::NoteBook;
+	$notebook = $frmNotebook->NoteBook()->pack();
+	my $billTab = $notebook->add('Bill', -label => $lc->get('Lane/Customer/Billing'));
+	my $shipTab = $notebook->add('Ship', -label => $lc->get('Lane/Customer/Shipping'));
+	my $acctTab = $notebook->add('Acct', -label => $lc->get('Lane/Customer/Accounting'));
+	my $notesTab = $notebook->add('Notes', -label => $lc->get('Lane/BackOffice/Notes'));
+
+	&customersBillAddr_ui($billTab);
+	&customersShipAddr_ui($shipTab);
+	&customersAccounting_ui($acctTab);
+	&customersNotes_ui($notesTab);
+	#end of tabbed notebook
+
+	###############################################################
+	#event bindings
+	###############################################################
+	$entId->bind('<Return>', sub{
+	    if($isNew and ! &askToSave)
+	    {
+		&openShow($cust->{'id'});
+	    }
+	    else
+	    {
+		&openShow($cust->{'id'});
+	    }
+	    shift->focusNext()->focus();
+	});
+	$entId->bind('<FocusOut>', sub {
+	    $cust->{'id'} = sprintf "%.15s", $cust->{'id'};
+	    unless($isNew)
+	    {
+		&openShow($cust->{'id'});
+	    }
+	});
+	$entId->bind('<KeyRelease>', sub {
+	    # might want to look for printing chars and destructive chars
+	    $isSaved = 1;
+	});
+
+	$entCompany->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCompany->bind('<FocusOut>', sub {
+	    $cust->{'coName'} = sprintf "%.40s", $cust->{'coName'};
+	});
+	$entCntFirst->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCntFirst->bind('<FocusOut>', sub {
+	    $cust->{'cntFirst'} = sprintf "%.35s", $cust->{'cntFirst'};
+	});
+	$entCntLast->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entCntLast->bind('<FocusOut>', sub {
+	    $cust->{'cntLast'} = sprintf "%.35s", $cust->{'cntLast'};
+	});
+	$entEmail->bind('<Return>', sub{shift->focusNext()->focus();});
+	$entEmail->bind('<FocusOut>', sub {
+	    $cust->{'email'} = sprintf "%.40s", $cust->{'email'};
+	});
+	# end additional interface code
+}
+#########################################################
+
+customers_ui $top;
+#this is to trick newRec() into not asking "save?"
+$isSaved = 1;
+&newRec;
+Tk::MainLoop;
+
+1;

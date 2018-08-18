@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+
+#whats-my-dataset-version
+#Copyright 2010 Jason Burrell
+#$Id$
+
+=pod
+
+=head1 NAME
+
+dataset/whats-my-dataset-version - Write the current dataset version to STDOUT
+
+=head1 SYNOPSIS
+
+whats-my-dataset-version
+
+=head1 DESCRIPTION
+
+C<whats-my-dataset-version> queries the dataset for its version. As the version is a simple integer, this data should not be used as a definitive source of the dataset's version.
+
+=head1 AUTHOR
+
+Jason Burrell
+
+=head1 BUGS
+
+=over
+
+=item *
+
+This program contains no known bugs.
+
+=back
+
+=head1 SEE ALSO
+
+L<LanePOS::SysString>
+
+The L'E<acirc>ne Website L<http://l-ane.net/>
+
+=cut
+
+BEGIN {
+    use FindBin;
+    use File::Spec;
+    $ENV{'LaneRoot'} = File::Spec->catdir($FindBin::Bin, File::Spec->updir); #use the correct number of updirs
+    require File::Spec->catfile($ENV{'LaneRoot'}, 'config', 'init.pl');
+}
+
+my $v = 'unknown';
+
+use LanePOS::SysString;
+
+eval
+{
+    my $str = SysString->new;
+    #change the obj so it can open older datasets
+    $str->{'columns'} = [qw/id data/];
+    $v = $str->{'data'} if $str->open('Lane/CORE/Dataset/Version');
+};
+#warn "eval said: $@\n" if $@;
+print "$v\n";

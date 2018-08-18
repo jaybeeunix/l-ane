@@ -1,0 +1,152 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+<html xmlns='http://www.w3.org/1999/xhtml'>
+
+<head>
+<title>L’âne XML Reporter Test: Constant if Tests</title>
+</head>
+
+<body>
+<h1>One-level Conditionals</h1>
+
+<h2>String</h2>
+<h3>Equality</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Exclusively Less</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Exclusively Greater</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inclusively Less</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inclusively Greater</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inequality</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Regex Pattern Match</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h2>Numeric</h2>
+<h3>Equality</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Exclusively Less</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Exclusively Greater</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inclusively Less</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inclusively Greater</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>Inequality</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h2>Boolean</h2>
+<h3>Undef</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>String</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>True Number</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h3>False Number</h3>
+<p>Should be true: [true]</p>
+<p>Should be false (no output): []</p>
+
+<h1>Nested Conditionals</h1>
+<h2>Two Conditionals</h2>
+
+<h3>True-False</h3>
+<p>true
+   
+
+</p>
+
+<h3>False-True</h3>
+<p>
+</p>
+
+<h3>True-True</h3>
+<p>true
+   true
+   
+
+</p>
+
+<h3>False-False</h3>
+<p>
+</p>
+
+<h2>Three Conditionals</h2>
+
+<h3>True-True-True</h3>
+<p>
+true
+true
+true
+</p>
+
+<h3>True-True-False</h3>
+<p>
+true
+true
+
+</p>
+
+<h3>True-False-True</h3>
+<p>
+true
+
+</p>
+
+<h3>True-False-False</h3>
+<p>
+true
+
+</p>
+
+<h3>False-True-True</h3>
+<p>
+</p>
+
+<h3>False-True-False</h3>
+<p>
+</p>
+
+<h3>False-False-True</h3>
+<p>
+</p>
+
+<h3>False-False-False</h3>
+<p>
+</p>
+
+</body>
+</html>

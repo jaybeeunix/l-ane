@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='US-ASCII' standalone='yes'?>
+<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN' 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'>
+
+<html xmlns='http://www.w3.org/1999/xhtml' xmlns:rpt='http://l-ane.net/l-ane-xml/xmlReporter0'>
+
+<head>
+<title>L&#x2019;&#xe2;ne XML Reporter Test: call Tests</title>
+</head>
+
+<body>
+<h1>call Tests</h1>
+
+<h2>Opening the 'Cash' customer</h2>
+<p>Calling Customer-&gt;open('') (this shouldn't return anything) <rpt:call object='Customer' method='open' argument0='Constant.'/></p>
+
+<h2>Object.member Syntax</h2>
+<p>ID: <rpt:output value='Customer.id'/></p>
+<p>Company's Name: <rpt:output value='Customer.coName'/></p>
+<p>Contact's First Name: <rpt:output value='Customer.cntFirst'/></p>
+<p>Contact's Last Name: <rpt:output value='Customer.cntLast'/></p>
+<p>Shipping Address1: <rpt:output value='Customer.billAddr1'/></p>
+<p>Address2: <rpt:output value='Customer.billAddr2'/></p>
+<p>City: <rpt:output value='Customer.billCity'/></p>
+<p>State: <rpt:output value='Customer.billSt'/></p>
+<p>Zip: <rpt:output value='Customer.billZip'/></p>
+<p>Country: <rpt:output value='Customer.billCountry'/></p>
+<p>Phone: <rpt:output value='Customer.billPhone'/></p>
+<p>Fax: <rpt:output value='Customer.billFax'/></p>
+<p>Shipping Address1: <rpt:output value='Customer.shipAddr1'/></p>
+<p>Address2: <rpt:output value='Customer.shipAddr2'/></p>
+<p>City: <rpt:output value='Customer.shipCity'/></p>
+<p>State: <rpt:output value='Customer.shipSt'/></p>
+<p>Zip: <rpt:output value='Customer.shipZip'/></p>
+<p>Country: <rpt:output value='Customer.shipCountry'/></p>
+<p>Phone: <rpt:output value='Customer.shipPhone'/></p>
+<p>Fax: <rpt:output value='Customer.shipFax'/></p>
+<p>Email: <rpt:output value='Customer.email'/></p>
+<p>Customer Type: <rpt:output value='Customer.custType'/></p>
+<p>Credit Limit: <rpt:output value='Customer.creditLmt'/></p>
+<p>Balance: <rpt:output value='Customer.balance'/></p>
+<p>Credit Remaining: <rpt:output value='Customer.creditRmn'/></p>
+<p>Last Sale: <rpt:output value='Customer.lastSale'/></p>
+<p>Last Pay: <rpt:output value='Customer.lastPay'/></p>
+<p>Terms: <rpt:output value='Customer.terms'/></p>
+<p>Taxes: <rpt:output value='Customer.taxes'/></p>
+<p>Notes: <rpt:output value='Customer.notes'/></p>
+<p>Created By: <rpt:output value='Customer.createdBy'/></p>
+<p>Created: <rpt:output value='Customer.created'/></p>
+
+<h2>Date Formatting Tests</h2>
+<p>Created: <rpt:output value='Customer.created'/></p>
+<p>Created (internal): <rpt:output value='Customer.created' format='internal'/></p>
+<p>Created (longTimestamp): <rpt:output value='Customer.created' format='longTimestamp'/></p>
+<p>Created (shortTimestamp): <rpt:output value='Customer.created' format='shortTimestamp'/></p>
+
+<h2>Restricted Calls</h2>
+
+<h3>save()</h3>
+<p>Trying save()...<rpt:call object='Customer' method='save'/><rpt:call object='Customer' method='open' argument0='Constant.'/></p>
+<p>Created (should be the same as above): <rpt:output value='Customer.created'/></p>
+
+<h3>remove()</h3>
+<p>Trying remove()...<rpt:call object='Customer' method='remove'/><rpt:call object='Customer' method='open' argument0='Constant.'/></p>
+<p>Created (should be the same as above): <rpt:output value='Customer.created'/></p>
+</body>
+</html>
